@@ -1,0 +1,122 @@
+h1 {
+    margin-top: 0px;
+    margin-bottom: 10px;
+    position: relative;
+    z-index: 10;
+    color: rgb(149, 3, 12); 
+    font-family: 'Times New Roman', Times, serif;
+    font-size:45px;
+    font-weight: bolder;
+    padding-top: 10px;
+}
+p{
+    font-family: 'Times New Roman', Times, serif;
+    color: white;
+    font-style: italic;
+    background-color: rgb(15, 66, 9);
+    border-radius: 3px;
+    padding: 5px;
+ }
+
+
+#game-wrapper {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+}
+
+#canvas-container {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: center;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    min-height: 100vh;
+    background-color: #f0f0f0;
+    font-family: Arial, sans-serif;
+    background: url("bgimg.png") no-repeat fixed;
+    background-size: cover;
+    font-family: sans-serif;
+    text-align: center;    
+}
+        
+main {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#inventory-container {
+    position: relative;
+    background-color: rgba(139, 90, 43, 0.9);
+    padding: 15px;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    border: 3px solid #654321;
+    z-index: 100;
+    margin-top: 20px;
+    display: flex;
+    justify-content: center;
+}
+
+#inventory-grid {
+    display: grid;
+    grid-template-columns: repeat(11, 60px); /* 11 columns */
+    grid-template-rows: repeat(2, 60px); /* 2 rows */
+    gap: 8px;
+    width: auto;
+}
+
+.inventory-slot {
+    width: 60px;
+    height: 60px;
+    background-color: rgba(101, 67, 33, 0.8);
+    border: 2px solid #8B5A2B;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.inventory-item {
+    width: 100%;
+    height: 100%;
+    background-size: cover;
+    background-position: center;
+    cursor: grab;
+    position: relative;
+    border-radius: 3px;
+}
+
+.inventory-item:active {
+    cursor: grabbing;
+}
+
+.inventory-item.dragging {
+    cursor: grabbing !important;
+}
+
+.inventory-count {
+    position: absolute;
+    bottom: 2px;
+    right: 4px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: bold;
+    pointer-events: none;
+}
+
