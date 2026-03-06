@@ -755,6 +755,7 @@ function drawGardenGrid() {
 }
 
 function drawBarnStock() {
+  textAlign(LEFT);
   //  stock grid
   const colW = 80, rowH = 80;
   const startX = 100, startY = 40;
@@ -824,6 +825,7 @@ const marketTradeRequirements = {
 };
 
 function drawTradeArea() {
+  textAlign(LEFT);
   // add background fill before drawing the rectangle
   fill(50, 50, 50, 180); // dark semi-transparent background
   rect(tradeRect.x, tradeRect.y, tradeRect.w, tradeRect.h, 10);
@@ -867,6 +869,7 @@ function drawTradeArea() {
 }
 
 function drawMarketStock() {
+  textAlign(LEFT);
   // market stock grid
   const colW = 80, rowH = 80;
   const startX = 100, startY = 40;
@@ -920,6 +923,7 @@ function drawMarketStock() {
 }
 
 function drawMarketTradeArea() {
+  textAlign(LEFT);
   // add background fill before drawing the rectangle
   fill(50, 50, 50, 180); // dark semi-transparent background
   rect(marketTradeRect.x, marketTradeRect.y, marketTradeRect.w, marketTradeRect.h, 10);
@@ -980,6 +984,7 @@ function mousePressed() {
   // CLICK TO START GAME
   if (currentWorld === 'start') {
     changeWorld('home');
+    showGuide = true;
     return;
   }
 
