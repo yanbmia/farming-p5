@@ -2,6 +2,9 @@
 
 **A small farming game inspired by Stardew Valley, built with p5.js.**
 
+> Play it here: [https://yanbmia.github.io/farming-p5/](https://yanbmia.github.io/farming-p5/)
+
+
 ---
 
 ## About
