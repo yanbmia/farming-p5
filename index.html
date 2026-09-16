@@ -2,25 +2,105 @@
 <html lang="en-us">
 
 <head>
+    <!-- without this the browser guesses the encoding, and every non-ASCII glyph in
+         sketch.js (the filled-slot tick, the animal hearts) decodes as mojibake -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sunlit Farms</title>
+    <meta name="description" content="A small farming game: grow crops, keep animals, trade at the barn and the farmers market.">
+
+    <!-- the pixel font is bundled locally (fonts/, SIL OFL) so the page needs no
+         third-party request and looks the same offline and on GitHub Pages -->
+    <link rel="preload" href="fonts/pixelify-sans.woff2" as="font" type="font/woff2" crossorigin>
+
     <!-- include the p5 core library using the CDN -->
     <!-- script src="https://cdn.jsdelivr.net/npm/p5@1.11.10/lib/p5.min.js"></script -->
 
     <!-- include the p5.js library from a local file -->
     <script src="p5/p5.min.js"></script>
 
+    <!-- p5.sound: ambient loops + SFX, loaded in preload() - see SOUND_FILES in sketch.js -->
+    <script src="p5/addons/p5.sound.min.js"></script>
+
+    <link rel="stylesheet" href="style.css">
+
+    <!-- 12x12 pixel bitmaps for the HUD buttons, rendered as inline SVG -->
+    <script src="hud-icons.js"></script>
+
     <!-- your custom sketch code -->
     <script src="sketch.js"></script>
-    <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-    <h1>Sunlit Farms</h1>
-    <div id="game-wrapper">
-        <div id="canvas-container">
+    <!--
+      The page is laid out like the front of a barn:
+
+        [signpost]   [ roof gable with the title sign swinging under it ]   [satchel]
+                     [ the game screen, a big barn window                ]
+                     [ controls plank                                     ]
+
+      The signpost on the left is the menu (its boards point at the screen), the
+      satchel on the right is the inventory, and the fence plank under the window
+      is the controls legend.
+    -->
+    <div id="farm-page">
+
+        <!-- LEFT: the menu is a wooden signpost with arrow boards -->
+        <nav id="signpost" aria-label="Game menu">
+            <div class="signpost-boards">
+                <button id="home-button" class="sign-board tilt-a" data-icon="home" aria-label="Go home" title="Home">
+                    <span class="px-icon-holder"></span><span class="sign-text">Home</span>
+                </button>
+                <button id="guide-button" class="sign-board tilt-b" data-icon="guide" aria-label="Open guide" title="Guide" aria-pressed="false">
+                    <span class="px-icon-holder"></span><span class="sign-text">Guide</span>
+                </button>
+                <button id="map-button" class="sign-board tilt-c" data-icon="map" aria-label="Open farm map" title="Farm map (M)" aria-pressed="false">
+                    <span class="px-icon-holder"></span><span class="sign-text">Map <kbd class="sign-key">M</kbd></span>
+                </button>
+                <button id="mute-button" class="sign-board tilt-d" data-icon="sound" aria-label="Mute sound" title="Sound on" aria-pressed="false">
+                    <span class="px-icon-holder"></span><span class="sign-text" id="mute-label">Sound</span>
+                </button>
+            </div>
+            <div class="signpost-post" aria-hidden="true"></div>
+            <div class="signpost-grass" aria-hidden="true"></div>
+        </nav>
+
+        <!-- MIDDLE: the barn - roof gable, hanging title sign, and the screen as its window -->
+        <div id="barn">
+            <div id="gable" aria-hidden="true">
+                <div class="roof roof-back"></div>
+                <div class="roof roof-front"></div>
+                <div class="eave"></div>
+            </div>
+            <div id="title-sign">
+                <span class="rope rope-left" aria-hidden="true"></span>
+                <span class="rope rope-right" aria-hidden="true"></span>
+                <h1>Sunlit Farms</h1>
+            </div>
+            <div id="console-body">
+                <div id="canvas-container">
+                </div>
+            </div>
+
+            <!-- one-line reference for the controls, so nobody has to open the guide to
+                 find out that the arrow keys walk and the mouse does everything else -->
+            <div id="controls-legend" aria-label="Controls">
+                <span class="legend-item"><kbd>Arrow keys</kbd> walk</span>
+                <span class="legend-item"><kbd>Click</kbd> pick up, plant, enter</span>
+                <span class="legend-item"><kbd>Space</kbd> use nearest</span>
+                <span class="legend-item"><kbd>Esc</kbd> back / close</span>
+                <span class="legend-item"><kbd>M</kbd> map</span>
+                <span class="legend-item legend-drag">drag from the satchel into trade slots</span>
+            </div>
         </div>
-    </div>
-    <div id="inventory-container">
-        <div id="inventory-grid"></div>
+
+        <!-- RIGHT: the inventory is a wooden crate ("satchel") hung beside the window -->
+        <aside id="inventory-container" aria-label="Inventory">
+            <div class="crate-label"><span>Satchel</span></div>
+            <div id="inventory-grid"></div>
+            <div class="crate-hint">click a seed to pick it, then click a plot</div>
+        </aside>
+
     </div>
 </body>
 

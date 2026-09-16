@@ -5,12 +5,6 @@
 > Play it here: [https://yanbmia.github.io/farming-p5/](https://yanbmia.github.io/farming-p5/)
 
 
----
-
-## About
-
-Farming P5 is a browser-based farming & animal-care game that focuses on simple, relaxing gameplay: grow crops, collect produce, care for animals, and trade at the market. It was built with the p5.js library and is intended as a playful project and learning exercise.
-
 ## Features
 
 - Multiple interactable areas: **Home**, **Garden**, **Chicken Coop**, **Cattle Coop**, **Pig Coop**, **Duck Pond**, **Barn**, and **Farmers Market**.
@@ -23,13 +17,11 @@ Farming P5 is a browser-based farming & animal-care game that focuses on simple,
 ## How to play
 
 - Open the game (see Running Locally below) and click the start screen.
-- Navigate the farm by clicking the onscreen arrows and hotspots in the Home hub.
-- Click animals or products (eggs, milk, bacon) to collect them into your inventory.
-- In the Garden, right-click to harvest mature crops (harvesting gives a small bonus yield).
-- Use the Barn to select stock items and the Farmers Market to select market items for trade.
-- Follow the on-screen guide (click the guide icon) for helpful tips.
-
-> Note: All interactions are primarily mouse-driven (click/drag); there are no complex keyboard controls.
+- Walk with the arrow keys; the mouse does everything else (click a crop, an egg, an animal, or a hub entrance).
+- Click a seed in the satchel to select it, then click an empty plot in the Garden to plant. Click again to water.
+- Use the Barn to craft and the Farmers Market to buy and sell: click an item, then drag ingredients from the satchel into the slots.
+- `Space` uses whatever is nearest, `Esc` steps back out of a hub or closes an overlay, `M` opens the farm map.
+- The signpost on the left holds Home, Guide, Map and Sound; the controls plank under the screen is a quick reference.
 
 ## Running locally
 
@@ -47,14 +39,16 @@ Recommended: serve the project with a local static server so assets load correct
 
 ## Project structure
 
-- `index.html` — main entry file
+- `index.html` — main entry file (the page is laid out as a barn front: signpost menu, roof + title sign, screen, satchel)
 - `sketch.js` — game logic (p5.js)
 - `style.css` — styles
+- `hud-icons.js` — 12x12 pixel bitmaps for the menu icons, rendered as inline SVG
+- `fonts/` — Pixelify Sans (SIL OFL), bundled so the page works offline
 - `p5/` — p5.js library and addons
 - `produce/`, `animal/`, `arrows/` — image assets used by the game
 
 
 ## License & Credits
 
-- This project was **inspired by** Stardew Valley; it is an independent fan-like project and **not affiliated** with ConcernedApe.
+- This project was **inspired by** Stardew Valley.
 - Uses the p5.js library — https://p5js.org/

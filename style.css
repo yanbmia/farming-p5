@@ -1,30 +1,201 @@
-h1 {
-    margin-top: 0px;
-    margin-bottom: 10px;
-    position: relative;
-    z-index: 10;
-    color: rgb(149, 3, 12); 
-    font-family: 'Times New Roman', Times, serif;
-    font-size:45px;
-    font-weight: bolder;
-    padding-top: 10px;
+/* ---------------------------------------------------------------------------
+   Sunlit Farms - page chrome
+   The page is dressed as the front of a barn: a signpost menu on the left, the
+   game screen as a barn window under a shingled gable (the title sign swings
+   from the apex), and the inventory as a wooden crate on the right.
+
+   Palette (shared with the canvas UI in sketch.js):
+     wood-dark  #3a2415   plank #caa06a   tray #8b5a2b   parchment #f6e7cd
+     gold       #ffd23f   sign-red rgb(149,3,12)
+   --------------------------------------------------------------------------- */
+
+@font-face {
+    font-family: 'Pixelify Sans';
+    src: url('fonts/pixelify-sans.woff2') format('woff2');
+    font-weight: 400 700;
+    font-style: normal;
+    font-display: swap;
 }
-p{
-    font-family: 'Times New Roman', Times, serif;
-    color: white;
-    font-style: italic;
-    background-color: rgb(15, 66, 9);
-    border-radius: 3px;
-    padding: 5px;
- }
 
+:root {
+    --font-pixel: 'Pixelify Sans', 'Trebuchet MS', Verdana, sans-serif;
+    --wood-dark: #3a2415;
+    --wood-mid: #6b4a2a;
+    --plank: #caa06a;
+    --plank-light: #d6af80;
+    --tray: #8b5a2b;
+    --tray-dark: #7a4d24;
+    --parchment: #f6e7cd;
+    --gold: #ffd23f;
+    --sign-red: rgb(149, 3, 12);
+    --grass: #4f8a3a;
+    --screen-w: 800px;
+}
 
-#game-wrapper {
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    padding: 18px 16px 40px;
+    min-height: 100vh;
+    background: url("bgimg.png") no-repeat fixed;
+    background-size: cover;
+    background-color: #b9e07a;
+    font-family: var(--font-pixel);
+    color: var(--wood-dark);
+    text-align: center;
+}
+
+/* the three columns: signpost | barn | crate */
+#farm-page {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 26px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* the chrome is furniture, not a document: dragging across it should never start
+   a text selection, and double-clicking a button shouldn't highlight it */
+#farm-page {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* ---------------------------------------------------------------------------
+   THE BARN: gable + title sign + screen + controls plank
+   --------------------------------------------------------------------------- */
+
+#barn {
+    position: relative;
     display: flex;
     flex-direction: column;
-    justify-content: center;
     align-items: center;
-    gap: 20px;
+    width: var(--screen-w);
+    max-width: 100%;
+    flex: 0 1 auto;
+}
+
+/* the gable: two stacked triangles (dark outline behind, shingled plank in front)
+   and a dark eave board where the roof meets the window */
+#gable {
+    position: relative;
+    width: 100%;
+    height: 118px;
+    filter: drop-shadow(6px 6px 0 var(--wood-dark));
+}
+
+.roof {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 8px;
+    top: 0;
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.roof-back {
+    background: var(--wood-dark);
+}
+
+.roof-front {
+    left: 9px;
+    right: 9px;
+    top: 7px;
+    background-color: var(--plank);
+    /* rows of shingles, drawn as hard stripes so they stay pixel-crisp */
+    background-image:
+        repeating-linear-gradient(to bottom,
+            transparent 0 12px, rgba(58, 36, 21, 0.28) 12px 15px),
+        repeating-linear-gradient(to right,
+            transparent 0 26px, rgba(58, 36, 21, 0.10) 26px 28px);
+}
+
+.eave {
+    position: absolute;
+    left: -6px;
+    right: -6px;
+    bottom: 0;
+    height: 10px;
+    background: var(--wood-dark);
+}
+
+/* the title sign hangs from the apex on two ropes and swings gently */
+#title-sign {
+    position: absolute;
+    top: 50px;
+    left: 50%;
+    z-index: 20;
+    padding: 9px 34px 8px;
+    background-color: var(--plank);
+    background-image: repeating-linear-gradient(to bottom,
+        transparent 0 22px, rgba(58, 36, 21, 0.18) 22px 24px);
+    border: 5px solid var(--wood-dark);
+    border-radius: 3px;
+    box-shadow: 5px 5px 0 var(--wood-dark);
+    transform-origin: 50% -16px;
+    transform: translateX(-50%) rotate(-1.5deg);
+    animation: sign-swing 6s ease-in-out infinite alternate;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+@keyframes sign-swing {
+    from { transform: translateX(-50%) rotate(-2.2deg); }
+    to   { transform: translateX(-50%) rotate(2.2deg); }
+}
+
+/* two nail heads so the sign reads as hung, not floating */
+#title-sign::before,
+#title-sign::after {
+    content: "";
+    position: absolute;
+    top: 6px;
+    width: 8px;
+    height: 8px;
+    background: var(--wood-dark);
+    box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.25);
+}
+
+#title-sign::before { left: 8px; }
+#title-sign::after  { right: 8px; }
+
+.rope {
+    position: absolute;
+    top: -21px;      /* up through the roof surface, which is ~16px above the sign here */
+    width: 4px;
+    height: 21px;
+    background: var(--wood-dark);
+}
+
+.rope-left  { left: 10px; }
+.rope-right { right: 10px; }
+
+h1 {
+    margin: 0;
+    color: var(--sign-red);
+    font-family: var(--font-pixel);
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    line-height: 1;
+    /* a hard one-pixel-step shadow reads as carved rather than printed */
+    text-shadow: 2px 2px 0 rgba(58, 36, 21, 0.35);
+}
+
+/* the screen is the barn window: one dark frame, square corners */
+#console-body {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    border: 6px solid var(--wood-dark);
+    border-top-width: 0;
+    box-shadow: 6px 6px 0 var(--wood-dark);
+    overflow: hidden;
+    background: var(--wood-dark);
 }
 
 #canvas-container {
@@ -32,61 +203,362 @@ p{
     z-index: 1;
     display: flex;
     justify-content: center;
+    line-height: 0;
 }
 
-body {
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
-    align-items: center;
-    min-height: 100vh;
-    background-color: #f0f0f0;
-    font-family: Arial, sans-serif;
-    background: url("bgimg.png") no-repeat fixed;
-    background-size: cover;
-    font-family: sans-serif;
-    text-align: center;    
+/* The canvas is scaled with CSS width, never transform: p5 maps mouse coordinates
+   through the element's scrollWidth, so a width change keeps every click in the
+   right place while a transform would not. handleCanvasDrop() does the same maths
+   for drag-and-drop. */
+#canvas-container canvas {
+    touch-action: none;          /* arrow keys and drags drive the game, not the page */
+    border: none !important;
+    border-radius: 0;
+    box-shadow: none;
+    display: block;
+    /* !important because p5 writes an inline 800px width on the element */
+    width: 100% !important;
+    height: auto !important;
 }
-        
-main {
+
+/* controls plank: bolted under the window sill */
+#controls-legend {
     display: flex;
+    flex-wrap: wrap;
     justify-content: center;
     align-items: center;
+    gap: 5px 16px;
+    width: 100%;
+    margin-top: 16px;
+    padding: 8px 16px;
+    background: var(--plank);
+    background-image: repeating-linear-gradient(to right,
+        transparent 0 118px, rgba(58, 36, 21, 0.16) 118px 121px);
+    border: 4px solid var(--wood-dark);
+    border-radius: 3px;
+    box-shadow: 5px 5px 0 var(--wood-dark);
+    font-family: var(--font-pixel);
+    font-size: 14px;
+    color: var(--wood-dark);
+    line-height: 1.4;
 }
+
+.legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+}
+
+.legend-drag {
+    color: var(--wood-mid);
+}
+
+kbd {
+    display: inline-block;
+    min-width: 16px;
+    padding: 1px 5px 0;
+    border: 2px solid var(--wood-dark);
+    border-radius: 3px;
+    background: var(--parchment);
+    color: var(--wood-dark);
+    font-family: var(--font-pixel);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.2;
+    box-shadow: 1px 1px 0 var(--wood-dark);
+}
+
+/* ---------------------------------------------------------------------------
+   THE SIGNPOST: menu buttons as arrow-shaped boards nailed to one post,
+   all pointing at the screen
+   --------------------------------------------------------------------------- */
+
+#signpost {
+    position: relative;
+    flex: 0 0 auto;
+    width: 186px;
+    margin-top: 104px;  /* boards start level with the top of the window */
+    padding-bottom: 60px;
+}
+
+.signpost-post {
+    position: absolute;
+    left: 14px;
+    top: -26px;
+    bottom: 0;
+    width: 18px;
+    background: var(--wood-dark);
+    z-index: 0;
+}
+
+.signpost-post::before {
+    content: "";
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    top: 0;
+    bottom: 0;
+    background: var(--wood-mid);
+    background-image: repeating-linear-gradient(to bottom,
+        transparent 0 40px, rgba(58, 36, 21, 0.35) 40px 43px);
+}
+
+/* pointed top of the post */
+.signpost-post::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: -12px;
+    width: 18px;
+    height: 12px;
+    background: var(--wood-dark);
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+/* a tuft of pixel grass where the post goes into the ground */
+.signpost-grass {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 4px;
+    height: 4px;
+    background: var(--grass);
+    box-shadow:
+        4px 0 0 var(--grass), 8px -4px 0 var(--grass), 12px 0 0 var(--grass),
+        16px -8px 0 var(--grass), 20px -4px 0 var(--grass), 24px 0 0 var(--grass),
+        28px -6px 0 var(--grass), 32px 0 0 var(--grass), 36px -4px 0 var(--grass),
+        40px 0 0 var(--grass), 44px -8px 0 var(--grass), 48px -2px 0 var(--grass),
+        -4px -4px 0 var(--grass);
+}
+
+.signpost-boards {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding-left: 6px;
+}
+
+.sign-board {
+    --tip: 22px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 176px;
+    height: 46px;
+    padding: 0 30px 0 12px;
+    border: none;
+    background: var(--wood-dark);
+    clip-path: polygon(0 0, calc(100% - var(--tip)) 0, 100% 50%, calc(100% - var(--tip)) 100%, 0 100%);
+    color: var(--wood-dark);
+    font: inherit;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-align: left;
+    cursor: pointer;
+    transition: transform 0.08s ease-out;
+}
+
+/* the plank face, inset from the dark outline */
+.sign-board::before {
+    content: "";
+    position: absolute;
+    inset: 4px 5px 4px 4px;
+    background-color: var(--plank);
+    background-image: repeating-linear-gradient(to right,
+        transparent 0 30px, rgba(58, 36, 21, 0.12) 30px 32px);
+    clip-path: polygon(0 0, calc(100% - var(--tip) + 2px) 0, 100% 50%, calc(100% - var(--tip) + 2px) 100%, 0 100%);
+    transition: background-color 0.12s ease-out;
+}
+
+/* nail heads holding the board to the post */
+.sign-board::after {
+    content: "";
+    position: absolute;
+    left: 20px;
+    top: 9px;
+    width: 4px;
+    height: 4px;
+    background: var(--wood-dark);
+    box-shadow: 0 24px 0 var(--wood-dark);
+    opacity: 0.6;
+}
+
+.sign-board > * {
+    position: relative;
+    z-index: 1;
+}
+
+.sign-board:hover::before {
+    background-color: var(--plank-light);
+}
+
+.sign-board:active {
+    transform: translate(2px, 2px) var(--tilt, rotate(0deg));
+}
+
+/* keyboard users need to see where they are; mouse users never see this ring */
+.sign-board:focus-visible {
+    outline: none;
+}
+.sign-board:focus-visible::before {
+    box-shadow: inset 0 0 0 3px var(--gold);
+}
+
+/* an "on" state for toggles: guide/map open, sound muted */
+.sign-board[aria-pressed="true"]::before {
+    background-color: var(--gold);
+}
+
+.tilt-a { --tilt: rotate(-2deg); transform: var(--tilt); }
+.tilt-b { --tilt: rotate(1.5deg); transform: var(--tilt); }
+.tilt-c { --tilt: rotate(-1deg); transform: var(--tilt); }
+.tilt-d { --tilt: rotate(2deg); transform: var(--tilt); }
+
+.px-icon-holder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    pointer-events: none;
+}
+
+.px-icon {
+    width: 30px;
+    height: 30px;
+    display: block;
+    image-rendering: pixelated;
+}
+
+.sign-text {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.sign-key {
+    font-size: 12px;
+    padding: 1px 4px 0;
+    min-width: 12px;
+}
+
+/* ---------------------------------------------------------------------------
+   THE SATCHEL: inventory in a wooden crate beside the window
+   --------------------------------------------------------------------------- */
 
 #inventory-container {
     position: relative;
-    background-color: rgba(139, 90, 43, 0.9);
-    padding: 15px;
-    border-radius: 10px;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-    border: 3px solid #654321;
-    z-index: 100;
-    margin-top: 20px;
-    display: flex;
-    justify-content: center;
+    flex: 0 0 auto;
+    margin-top: 118px; /* level with the window, under the eave */
+    padding: 22px 14px 12px;
+    background-color: var(--tray);
+    /* horizontal slats with a dark seam between each */
+    background-image: repeating-linear-gradient(to bottom,
+        transparent 0 38px, rgba(58, 36, 21, 0.45) 38px 41px);
+    border: 5px solid var(--wood-dark);
+    border-radius: 3px;
+    box-shadow: 6px 6px 0 var(--wood-dark);
+    z-index: 5;
 }
 
+/* corner nails */
+#inventory-container::before,
+#inventory-container::after {
+    content: "";
+    position: absolute;
+    top: 6px;
+    width: 6px;
+    height: 6px;
+    background: var(--wood-dark);
+    box-shadow: 0 calc(100% + 0px) 0 var(--wood-dark);
+}
+#inventory-container::before { left: 6px; }
+#inventory-container::after  { right: 6px; }
+
+/* the label is a smaller plank nailed on at a slight angle, overlapping the top edge */
+.crate-label {
+    position: absolute;
+    top: -22px;
+    left: 50%;
+    transform: translateX(-50%) rotate(-2deg);
+    padding: 5px 20px 4px;
+    background: var(--plank);
+    border: 4px solid var(--wood-dark);
+    border-radius: 3px;
+    box-shadow: 3px 3px 0 var(--wood-dark);
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--wood-dark);
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.crate-hint {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #e3c89e;
+    text-shadow: 1px 1px 0 var(--wood-dark);
+}
+
+/* the crate holds three labelled groups, stacked. Each group sets its own column
+   count inline (INVENTORY_CATEGORIES in sketch.js); --slot-size keeps the card and
+   grid metrics in one place. */
 #inventory-grid {
+    --slot-size: 52px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+}
+
+.inventory-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 6px 10px 8px;
+    background-color: rgba(58, 36, 21, 0.38);
+    border: 2px solid rgba(58, 36, 21, 0.6);
+    border-radius: 6px;
+}
+
+.inventory-group-label {
+    font-family: var(--font-pixel);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #f3e0c0;
+    text-shadow: 1px 1px 0 var(--wood-dark);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.inventory-group-slots {
     display: grid;
-    grid-template-columns: repeat(11, 60px); /* 11 columns */
-    grid-template-rows: repeat(2, 60px); /* 2 rows */
-    gap: 8px;
-    width: auto;
+    gap: 6px;
 }
 
 .inventory-slot {
-    width: 60px;
-    height: 60px;
-    background-color: rgba(101, 67, 33, 0.8);
-    border: 2px solid #8B5A2B;
+    width: var(--slot-size);
+    height: var(--slot-size);
+    background-color: rgba(101, 67, 33, 0.85);
+    border: 2px solid var(--tray);
     border-radius: 5px;
     display: flex;
     align-items: center;
     justify-content: center;
     position: relative;
+    box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.2);
 }
 
 .inventory-item {
@@ -94,29 +566,207 @@ main {
     height: 100%;
     background-size: cover;
     background-position: center;
+    background-repeat: no-repeat;
     cursor: grab;
     position: relative;
     border-radius: 3px;
+    transition: transform 0.08s ease-out;
+}
+
+.inventory-item:hover {
+    transform: translateY(-2px);
+    filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.45));
 }
 
 .inventory-item:active {
     cursor: grabbing;
+    transform: none;
 }
 
 .inventory-item.dragging {
     cursor: grabbing !important;
 }
 
+.inventory-item.selected {
+    outline: 3px solid var(--gold);
+    outline-offset: -2px;
+    box-shadow: 0 0 8px rgba(255, 210, 63, 0.9);
+}
+
 .inventory-count {
     position: absolute;
     bottom: 2px;
-    right: 4px;
-    background-color: rgba(0, 0, 0, 0.7);
-    color: white;
-    padding: 2px 6px;
+    right: 3px;
+    background-color: rgba(35, 22, 12, 0.85);
+    color: var(--parchment);
+    padding: 1px 5px 0;
     border-radius: 3px;
-    font-size: 12px;
-    font-weight: bold;
+    border: 1px solid rgba(202, 160, 106, 0.55);
+    font-family: var(--font-pixel);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.2;
     pointer-events: none;
 }
 
+/* hover tooltip for an inventory card: item name, what it's made from, and what it
+   can be traded for. Lives on <body> so it can float over the canvas. */
+#inventory-tooltip {
+    position: fixed;
+    z-index: 2000;
+    display: none;
+    max-width: 260px;
+    padding: 8px 10px;
+    background-color: rgba(35, 22, 12, 0.96);
+    border: 2px solid var(--plank);
+    border-radius: 4px;
+    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35);
+    color: var(--parchment);
+    font-family: var(--font-pixel);
+    font-size: 13px;
+    line-height: 1.4;
+    text-align: left;
+    pointer-events: none;
+}
+
+#inventory-tooltip .tt-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid rgba(202, 160, 106, 0.4);
+    padding-bottom: 4px;
+}
+
+#inventory-tooltip .tt-name  { font-size: 16px; font-weight: 700; color: var(--gold); }
+#inventory-tooltip .tt-owned { font-size: 12px; color: var(--plank); white-space: nowrap; }
+#inventory-tooltip .tt-row   { margin-top: 5px; }
+#inventory-tooltip .tt-label { color: #9fd17a; font-weight: 700; }
+#inventory-tooltip .tt-where { color: #a98a63; }
+#inventory-tooltip .tt-warn  { color: #e8a06a; font-weight: 700; }
+#inventory-tooltip .tt-hint  { color: #a98a63; }
+
+/* floating icon that follows the cursor while dragging an inventory item onto
+   the canvas - the native drag ghost is suppressed (see handleDragStart), so this
+   div stands in for it and is positioned manually via dragGhost-tracking dragover */
+#drag-ghost {
+    position: fixed;
+    width: 50px;
+    height: 50px;
+    background-size: cover;
+    background-position: center;
+    pointer-events: none;
+    z-index: 1000;
+    display: none;
+    transform: translate(-50%, -50%);
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+
+/* ---------------------------------------------------------------------------
+   Narrower windows.
+   < 1320px: the crate moves under the barn and lays its three groups side by side.
+   < 1080px: the signpost boards line up in a row under the window too.
+   <  880px: the window itself shrinks to fit (see the canvas rule above).
+   --------------------------------------------------------------------------- */
+/* laptop widths: keep the satchel beside the window (so nothing has to scroll
+   while dragging an item into a trade slot) by slimming both side columns */
+@media (max-width: 1330px) {
+    #farm-page { gap: 18px; }
+
+    #signpost { width: 158px; }
+    .sign-board { width: 150px; height: 42px; font-size: 15px; padding-right: 26px; gap: 6px; }
+    .px-icon-holder, .px-icon { width: 26px; height: 26px; }
+
+    #inventory-container { padding: 20px 10px 10px; }
+    #inventory-grid { --slot-size: 48px; gap: 8px; }
+    .inventory-group { padding: 5px 8px 7px; }
+    /* three columns per group here; the inline four-column rule comes from sketch.js */
+    .inventory-group-slots { grid-template-columns: repeat(3, var(--slot-size)) !important; }
+    .crate-label { font-size: 15px; padding: 4px 14px 3px; top: -19px; }
+    .crate-hint { display: none; }
+}
+
+/* narrower still: the crate moves under the barn and lays its groups side by
+   side, and the signpost boards line up in a row under the window */
+@media (max-width: 1100px) {
+    #farm-page {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    #signpost {
+        order: 2;
+        flex-basis: 100%;
+        width: auto;
+        margin-top: 8px;
+        padding-bottom: 0;
+        display: flex;
+        justify-content: center;
+    }
+
+    .signpost-post,
+    .signpost-grass {
+        display: none;
+    }
+
+    .signpost-boards {
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 12px 16px;
+        padding-left: 0;
+    }
+
+    #inventory-container {
+        order: 3;
+        flex-basis: 100%;
+        max-width: var(--screen-w);
+        margin: 30px auto 0;
+        padding: 22px 14px 12px;
+    }
+
+    #inventory-grid {
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: center;
+        align-items: flex-start;
+    }
+
+    .inventory-group-slots { grid-template-columns: repeat(4, var(--slot-size)) !important; }
+    .crate-label { font-size: 18px; padding: 5px 20px 4px; top: -22px; }
+    .crate-hint { display: block; }
+}
+
+@media (max-width: 880px) {
+    body { padding-left: 10px; padding-right: 10px; }
+
+    #barn { width: 100%; }
+
+    #inventory-grid { --slot-size: 46px; }
+
+    h1 { font-size: 28px; }
+    #title-sign { padding: 8px 22px 7px; top: 42px; }
+    #gable { height: 100px; }
+    #inventory-container { margin-top: 30px; }
+
+    #controls-legend { font-size: 13px; gap: 4px 12px; }
+}
+
+@media (max-width: 560px) {
+    #inventory-grid { --slot-size: 40px; }
+    .inventory-group { padding: 5px 7px 6px; }
+    .sign-board { width: 140px; height: 42px; font-size: 15px; }
+    h1 { font-size: 22px; }
+    #gable { height: 80px; }
+    #title-sign { top: 28px; }
+}
+
+/* people who would rather not have motion get the state changes without the slide */
+@media (prefers-reduced-motion: reduce) {
+    #title-sign { animation: none; }
+    .sign-board,
+    .sign-board::before,
+    .inventory-item {
+        transition: none;
+    }
+}
