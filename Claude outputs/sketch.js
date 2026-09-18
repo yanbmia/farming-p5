@@ -3,7 +3,7 @@ let chickenCoopBg;
 let gardenBg;
 let barn;
 let home;
-let titleWordmark;
+let startpage;
 let chicken1, chicken2, eggImg;
 let duck1, duck2;
 let leftArrow, rightArrow, backArrow;
@@ -15,10 +15,12 @@ let farmersMarketBg;
 let pigCoopBg;
 let cowImg, breadImg, milkImg, pigImg, baconImg, pieImg, cheeseImg, sandwichImg, appleJamImg, carrotCakeImg;
 
-let currentWorld = 'start'; 
-let previousWorld = null; 
+// note: the back arrow is now drawn in code - see drawBackButton() / getBackButtonRect()
+let currentWorld = 'start'; // start, home, chickenCoop, barn, garden, leftExtend, rightExtend, cattleCoop, duckPond, farmersMarket, pigCoop
+let previousWorld = null; // track previous world for back navigation
 
-
+// human-readable zone names shown on the scrapbook-style zone label flag
+// (see drawZoneLabel()) - lets the player tell at a glance where they are
 const worldLabels = {
   home: 'Home',
   leftExtend: 'Farm West',
@@ -92,7 +94,7 @@ const barnItems = [
 ];
 
 let selectedStockItem = null;
-
+// drop zone in barn
 const tradeRect = { x: 500, y: 200, w: 250, h: 220 };
 
 // farmers market items and trade zone
@@ -100,16 +102,23 @@ const marketItems = ['bread', 'cow', 'cheese', 'pig', 'pie', 'sandwich', 'applej
 let selectedMarketItem = null;
 const marketTradeRect = { x: 500, y: 200, w: 250, h: 220 };
 
+// drag and drop variables (used for duck pond feeding, and for dragging ingredients
+// into barn/market trade slots - see tryFillIngredientSlot(). Garden planting is
+// click/space-based instead, see selectedSeed/plantSeedAt())
 let isDragging = false;
 let draggedItem = null;
 let draggedElement = null;
 
+// planting: click a seed in the inventory to select it, then walk over to the garden
+// and click an empty cell to plant (space plants the cell you are standing on)
 let selectedSeed = null;
 
 // guide overlay
 let showGuide = false;
 
-
+// coins: earned by selling at the market, spent to buy barn/market items outright.
+// Kept alongside `inventory` rather than inside it - it isn't an item and shouldn't
+// get an inventory slot. Persisted with the rest of the save, see saveInventory().
 let coins = 0;
 let marketMode = 'buy';  // farmers market panel: 'buy' (trade slots) or 'sell'
 let lastSale = null;     // { text, at } - brief confirmation under the trade box
@@ -119,6 +128,8 @@ let player;
 const INTERACT_RANGE = 45; // how close player must be to harvest/collect
 
 // walkable bounds per world (keeps player on the path/grass, off menus).
+// barn and farmersMarket are intentionally excluded - they're mouse-click-only
+// trading screens with no player character or movement.
 const worldBounds = {
   home:          { minX: 60,  maxX: 740, minY: 140, maxY: 600 },
   leftExtend:    { minX: 60,  maxX: 700, minY: 140, maxY: 600 },
@@ -153,6 +164,10 @@ const hubZones = {
   home: [
     { quad: [100, 135, 300, 135, 300, 340, 100, 340], destination: 'chickenCoop', label: 'Chicken Coop' },
     { quad: [255, 430, 565, 430, 565, 600, 255, 600], destination: 'garden', label: 'Garden' },
+    // traced from farm.png: the roof's left edge runs x=315 (y~135) to x=328 (y~225),
+    // the right eave is flat at x=548 down to y~218, and the walls sit at x 328..534
+    // with their base at y~288. The old quad was a trapezoid over the roof, ~50px
+    // right of the building and stopping above the doors.
     { quad: [315, 135, 548, 135, 540, 288, 328, 288], destination: 'barn', label: 'Barn' },
   ],
   leftExtend: [
@@ -169,6 +184,12 @@ const hubZones = {
 let worldChangeCooldown = 0;
 
 // Player class
+//
+// Drawn procedurally rather than from a sprite sheet, so the "walk cycle" is a set
+// of transforms driven by two bits of state: walkPhase (where we are in the stride)
+// and stride (how much of the walk animation is faded in, 0..1). Both are updated in
+// updateAnimation(), which handleMovement() calls every frame - so the character
+// eases into walking and settles back to idle instead of snapping between the two.
 const WALK_CYCLE_SPEED = 0.22;  // radians of stride per frame while moving
 const STRIDE_FADE_IN   = 0.18;  // how fast the walk animation ramps up
 const STRIDE_FADE_OUT  = 0.22;  // ...and eases back out when the keys are released
@@ -297,7 +318,17 @@ class Player {
   }
 }
 
+// ---------------------------------------------------------------------------
 // THE FARMER
+//
+// A code-drawn pixel sprite: 12 columns wide, PX pixels per cell, so it matches
+// the chunky look of the HUD icons. The body is a bitmap per facing (left is the
+// right-facing sheet mirrored); the legs are drawn separately so the existing
+// walk cycle (swing) can animate them without needing extra frames. To swap in
+// real art later, replace drawFarmerSprite() with an image() call - everything
+// that drives it (facing, swing, stride) stays the same.
+// ---------------------------------------------------------------------------
+
 const FARMER_PX = 3; // on-screen pixels per bitmap cell -> sprite is 36 wide, 48 tall
 
 const FARMER_PALETTE = {
@@ -440,6 +471,24 @@ function drawFarmerSprite(facing, swing, stride) {
 
   pop();
 }
+
+// ---------------------------------------------------------------------------
+// AMBIENT LIFE
+//
+// The backgrounds are static images, so the motion is layered over them:
+//
+//  - cloud shadows drifting across the ground. The camera is top-down, so what you
+//    would actually see of a passing cloud is its shadow, not the cloud itself
+//  - season-appropriate motes in the air: petals in Spring, pollen in Summer,
+//    leaves in Fall, snow in Winter
+//  - crops swaying, and animals bobbing on the spot. Both reuse the Perlin pattern
+//    the animals already wander with, at a much smaller amplitude, so the idle
+//    motion has the same soft irregular feel as the walking
+//  - a short particle burst when something is harvested or collected
+//
+// All of it is procedural: nothing here needs new art, and it sits on top of
+// whatever the backgrounds become after the art pass.
+// ---------------------------------------------------------------------------
 
 const OUTDOOR_WORLDS = ['home', 'leftExtend', 'rightExtend', 'garden', 'chickenCoop',
                         'cattleCoop', 'pigCoop', 'duckPond'];
@@ -631,12 +680,28 @@ function animalBobOffset(animal) {
   return (noise(animal.bobSeed + frameCount * 0.02) - 0.5) * 5;
 }
 
-// Animal Happiness
+// ---------------------------------------------------------------------------
+// ANIMAL CARE
+//
+// Chickens, cows and pigs used to produce on a flat random timer no matter what the
+// player did. Each animal now carries a happiness stat that decays on the in-game
+// clock and is topped up by feeding it, and that stat scales how fast its production
+// timer runs - well fed animals produce faster, neglected ones stop entirely.
+//
+// These are plain helpers rather than a base class: the four animal classes are
+// independent and each only needs three one-line calls (init, decay, draw mood), so
+// a shared parent would be more disruption than it's worth.
+//
+// Ducks join the same system. They still chase breadcrumbs, but a crumb now feeds
+// the same stat instead of the separate 120-frame heart timer they used to have.
+// ---------------------------------------------------------------------------
+
 const ANIMAL_START_HAPPINESS = 60;
 const HAPPINESS_DECAY_PER_GAME_HOUR = 7;  // full to empty in about 14 in-game hours
 const HAPPY_THRESHOLD = 70;               // heart shows above this
 const HUNGRY_THRESHOLD = 30;              // hunger icon shows below this
 
+// feeding costs one wheat - the starter crop, and the cheapest thing to buy back.
 // Set FEED_COST to 0 if feeding should be free.
 const FEED_ITEM = 'wheat';
 const FEED_COST = 1;
@@ -1132,8 +1197,22 @@ class Bacon {
   }
 }
 
-
+// ---------------------------------------------------------------------------
 // SEASONS AND CROP TRAITS
+//
+// Every crop used to grow at the same 0.0015 and differ only by where it sat in the
+// trade tree. Two traits now separate them, and they pull against each other: a crop
+// that grows fast is worth less than its tier suggests, and a slow one is worth more.
+// Planting everything is no longer the obvious move.
+//
+// Value is a MULTIPLIER on the price derived from the recipe tables rather than a
+// hand-written price, so the derivation stays the single source of truth and editing
+// a recipe still re-prices everything downstream.
+//
+// Seasons run off the day counter. Two crops are season-locked; the rest grow year
+// round at a seasonal rate. A locked crop is never a hard wall - it can still be
+// bought with coins - which is the reason locking one is fair at all.
+// ---------------------------------------------------------------------------
 
 const SEASONS = ['Spring', 'Summer', 'Fall', 'Winter'];
 const DAYS_PER_SEASON = 1; // one in-game day each, so a year is four days
@@ -1201,7 +1280,18 @@ function drawSeasonTint() {
   if (rgb) tint(rgb[0], rgb[1], rgb[2]);
 }
 
+// ---------------------------------------------------------------------------
 // IN-GAME CLOCK
+//
+// One real second is one in-game minute, so an in-game day is 24 real minutes.
+// Nothing else depends on this yet - it exists so crop watering can be measured in
+// in-game hours rather than raw milliseconds, and so the day/night cycle can extend
+// it later instead of introducing a second, conflicting notion of time.
+//
+// The clock only advances while the game is open: crops don't dry out while the tab
+// is closed. Total elapsed minutes ride along in the save.
+// ---------------------------------------------------------------------------
+
 const REAL_MS_PER_GAME_MINUTE = 1000;
 const MINUTES_PER_GAME_HOUR = 60;
 const HOURS_PER_GAME_DAY = 24;
@@ -1260,8 +1350,16 @@ function drawGameClock() {
   pop();
 }
 
-
+// ---------------------------------------------------------------------------
 // CROP CARE
+//
+// A planted crop does nothing until it's watered. Watering tops up a reservoir that
+// drains over WATER_LASTS_HOURS; growth speed scales with how full it is, so topping
+// it up often is meaningfully faster than watering once and walking away. Let it run
+// dry and growth stops entirely; leave it dry past WITHER_AFTER_HOURS and the crop
+// withers, blocking its plot until cleared for nothing.
+// ---------------------------------------------------------------------------
+
 const WATER_LASTS_HOURS = 8;    // in-game hours of moisture from one watering
 const WITHER_AFTER_HOURS = 20;  // in-game hours dry before the crop is lost
 const FRESH_GROWTH_BONUS = 0.5; // up to +50% growth speed right after watering
@@ -1449,8 +1547,20 @@ class Crop {
   }
 }
 
-
+// ---------------------------------------------------------------------------
 // AUDIO
+//
+// One ambient loop per area plus a handful of short SFX, all loaded in preload()
+// via p5.sound (bundled at p5/addons/p5.sound.min.js, wired up in index.html).
+//
+// Files live in sounds/ and were synthesized as placeholders - see
+// sounds/generate-sounds.py. Every one is meant to be swapped for a real recording
+// later: drop a file with the same name in and nothing else has to change.
+//
+// Nothing here is load-bearing. Missing files, a browser that blocks audio, or
+// p5.sound failing to load all end in the same place: the game runs silently.
+// ---------------------------------------------------------------------------
+
 const SOUND_FILES = {
   sfx: {
     collect: 'sounds/sfx-collect.wav',  // egg / milk / bacon pickup
@@ -1462,14 +1572,18 @@ const SOUND_FILES = {
     water:   'sounds/sfx-water.wav',    // watering a crop
     wither:  'sounds/sfx-wither.wav',   // clearing a dead plant
   },
-  // ambient: {
-    //field:  '',     // open air: wind, birds, warm pad
-    //coop:   '',      // animal pens: straw, soft clucks
-    //water:  '',     // pond: lapping water, droplets
-    //indoor: '',    // barn / market: low hum, murmur, creaks
-  //},
+  ambient: {
+    field:  'sounds/amb-field.wav',     // open air: wind, birds, warm pad
+    coop:   'sounds/amb-coop.wav',      // animal pens: straw, soft clucks
+    water:  'sounds/amb-water.wav',     // pond: lapping water, droplets
+    indoor: 'sounds/amb-indoor.wav',    // barn / market: low hum, murmur, creaks
+  },
 };
 
+// which bed plays where. Four tracks cover eleven worlds: the open-air areas share
+// 'field', the three animal pens share 'coop', and the two trading interiors share
+// 'indoor'. Worlds mapped to the SAME bed don't restart it when you walk between
+// them - see setAmbientForWorld().
 const WORLD_AMBIENT = {
   start:         'field',
   home:          'field',
@@ -1484,7 +1598,9 @@ const WORLD_AMBIENT = {
   farmersMarket: 'indoor',
 };
 
-
+// sub-worlds you step into and back out of, which is what the whoosh marks. Walking
+// between home/leftExtend/rightExtend is a plain edge transition, so it just
+// crossfades the bed with no whoosh on top.
 const HUB_WORLDS = ['chickenCoop', 'cattleCoop', 'pigCoop', 'duckPond', 'garden', 'barn', 'farmersMarket'];
 
 const AMBIENT_VOLUME = 0.32;
@@ -1590,8 +1706,27 @@ function playWorldTransitionSfx(from, to) {
 function setMuted(muted) {
   audioMuted = muted;
   applyMasterVolume();
+  updateMuteButton();
   saveInventory(); // the preference rides along with the rest of the save
   console.log(`Audio ${audioMuted ? 'muted' : 'unmuted'}`);
+}
+
+function updateMuteButton() {
+  const btn = document.getElementById('mute-button');
+  if (!btn) return;
+  // the icon is a pixel bitmap from hud-icons.js; fall back to text if that file
+  // didn't load for some reason so the button never goes blank
+  if (window.setPixelIcon) {
+    window.setPixelIcon(btn, audioMuted ? 'muted' : 'sound');
+  } else {
+    btn.textContent = audioMuted ? 'off' : 'on';
+  }
+  btn.title = audioMuted ? 'Sound off' : 'Sound on';
+  btn.setAttribute('aria-label', audioMuted ? 'Unmute sound' : 'Mute sound');
+  btn.setAttribute('aria-pressed', String(audioMuted));
+
+  const label = document.getElementById('mute-label');
+  if (label) label.textContent = audioMuted ? 'Muted' : 'Sound';
 }
 
 // Arrow keys and space drive the player, but the browser also uses them to scroll
@@ -1611,7 +1746,7 @@ function preload() {
   gardenBg = loadImage('garden.png');
   barn = loadImage('barn.png'); 
   home = loadImage('home.png');
-  titleWordmark = loadImage('title-wordmark.png');
+  startpage = loadImage('startscreen.png');
   chicken1 = loadImage('animal/chicken1.png');
   chicken2 = loadImage('animal/chicken2.png');
   eggImg = loadImage('produce/egg.png');
@@ -1646,12 +1781,14 @@ function preload() {
   preloadSounds();
 }
 
-
+// the same pixel face the HTML chrome uses (see @font-face in style.css), so the
+// canvas HUD and the page around it read as one thing. Text is redrawn every
+// frame, so it snaps to the pixel face the moment the font finishes loading.
+// (A single family name, not a stack: p5 wraps the whole string in quotes.)
 const UI_FONT = 'Pixelify Sans';
 
 function setup() {
   let canvas = createCanvas(800, 650);
-  pixelDensity(Math.max(2, window.devicePixelRatio || 1));
   noiseDetail(24);
   canvas.parent('canvas-container');
   canvas.elt.style.border = 'none'; // rounded corners + shadow now come from CSS, see #canvas-container canvas
@@ -1701,6 +1838,21 @@ function setup() {
     setupCanvasDropHandling();
   }, 100);
   console.log('game setup complete!');
+}
+
+// middle of a world's walkable bounds - the one spot that is guaranteed to be
+// reachable, so it's where every "teleport" style transition lands (hub entry, Back,
+// the Home button). Reusing the player's raw x/y across a world change is what used to
+// drop them inside a fence quad or a building footprint with nowhere to walk.
+// Returns {x: undefined, y: undefined} for the click-only worlds (barn, market), which
+// have no bounds and no player character.
+function worldCenter(world) {
+  const bounds = worldBounds[world];
+  if (!bounds) return { x: undefined, y: undefined };
+  return {
+    x: (bounds.minX + bounds.maxX) / 2,
+    y: (bounds.minY + bounds.maxY) / 2,
+  };
 }
 
 // helper function to change worlds and track history
@@ -1875,15 +2027,14 @@ function draw() {
 
   // START SCREEN
   if (currentWorld === 'start') {
-    drawStartScreen();
-    if (settingsOpen) drawSettingsPanel();
+    image(startpage, 0, 0, width, height);
+    drawStartScreenControls();
     setHoverCursor(!newFarmConfirm || getNewFarmConfirmButtons().some(b => pointInRect(mouseX, mouseY, b)));
-    syncHudButtonStates();
     return; // do NOT draw the home button on start
   }
 
   // move player (unless an overlay is blocking input)
-  if (!showGuide && !questBoardOpen && !mapOpen && !settingsOpen && !newFarmConfirm && player) {
+  if (!showGuide && !questBoardOpen && !mapOpen && player) {
     player.handleMovement();
     checkWorldTransitions();
   }
@@ -2000,8 +2151,7 @@ function draw() {
   drawTutorialFlash();
   if (showGuide) {
     drawGuideOverlay();
-  }
-  if (settingsOpen) drawSettingsPanel();
+}
 }
 
 // small rotated "flag" sign in the top-left showing the current zone name, so the
@@ -2101,7 +2251,7 @@ function drawZoneLabel() {
 // screens. World targets (crops, eggs, animals, zone entrances) are handled by
 // drawInteractPrompt(); this covers the rest, and runs after it each frame.
 function updateHudCursor() {
-  const overlayOpen = mapOpen || questBoardOpen || showGuide || settingsOpen;
+  const overlayOpen = mapOpen || questBoardOpen || showGuide;
   let clickable = !overlayOpen && worldTargetHovered;
   worldTargetHovered = false;
 
@@ -2118,12 +2268,6 @@ function updateHudCursor() {
     }
   } else if (showGuide) {
     if (getTutorialButtons().some(b => pointInRect(mouseX, mouseY, b))) clickable = true;
-  } else if (settingsOpen) {
-    if (newFarmConfirm) {
-      if (getNewFarmConfirmButtons().some(b => pointInRect(mouseX, mouseY, b))) clickable = true;
-    } else {
-      clickable = true; // the whole panel is clickable - a control, or the backdrop to close it
-    }
   }
 
   setHoverCursor(clickable);
@@ -2131,7 +2275,7 @@ function updateHudCursor() {
 
 // keep the HTML stump buttons' pressed state in step with the overlays, whichever
 // way they were opened or closed (button, key, click-to-dismiss)
-let hudStateCache = { guide: null, map: null, settings: null };
+let hudStateCache = { guide: null, map: null };
 
 function syncHudButtonStates() {
   if (hudStateCache.guide !== showGuide) {
@@ -2143,11 +2287,6 @@ function syncHudButtonStates() {
     hudStateCache.map = mapOpen;
     const btn = document.getElementById('map-button');
     if (btn) btn.setAttribute('aria-pressed', String(mapOpen));
-  }
-  if (hudStateCache.settings !== settingsOpen) {
-    hudStateCache.settings = settingsOpen;
-    const btn = document.getElementById('settings-button');
-    if (btn) btn.setAttribute('aria-pressed', String(settingsOpen));
   }
 }
 
@@ -2196,29 +2335,13 @@ function drawGardenGrid() {
   }
 }
 
-// empty plots no longer draw a visible tilled square - the garden background art
-// already reads as plantable ground, and 48 faint boxes over it looked like a grid
-// overlay. The only thing still drawn here is the cursor outline while a seed is
-// selected: gold when the player is close enough to plant that cell, grey when
-// they need to walk over first.
+// an empty plot draws nothing at all - the field reads as the background art, not
+// as a chequerboard, and there is no hover marking on the cell under the cursor
+// either. (The faint tilled squares that used to fill every empty cell, and the
+// gold/grey hover outline that replaced them, were both removed; getCellRect()
+// still defines where the 48 plots are, and the cursor still changes shape over a
+// plantable cell.)
 function drawEmptyPlot(x, y, w, h, row, col) {
-  const inset = 4;
-  const seedReady = !!selectedSeed && currentWorld === 'garden';
-  if (!seedReady) return;
-
-  const hoveredCell = getGridCoordinates(mouseX, mouseY);
-  const hovered = hoveredCell && hoveredCell.row === row && hoveredCell.col === col;
-  if (!hovered) return;
-
-  const cell = getCellRect(row, col);
-  const near = player && dist(player.x, player.y, cell.cx, cell.cy) <= INTERACT_RANGE;
-  push();
-  rectMode(CORNER);
-  noFill();
-  stroke(near ? color(255, 210, 90) : color(230, 230, 230, 170));
-  strokeWeight(3);
-  rect(x + inset - 1, y + inset - 1, w - inset * 2 + 2, h - inset * 2 + 2, 4);
-  pop();
 }
 
 // ---------------------------------------------------------------------------
@@ -3053,57 +3176,26 @@ function updateTutorial() {
 
 // ---- the overlay -----------------------------------------------------------
 
+// the live step card is a narrow single column; the finished-tutorial checklist is
+// wider and taller because it carries the controls legend beside the goal list
 function getTutorialPanel() {
-  const w = 470, h = tutorialActive ? 338 : 390;
+  const w = tutorialActive ? 470 : 620;
+  const h = tutorialActive ? 268 : 352;
   return { x: (width - w) / 2, y: (height - h) / 2 - 20, w, h };
 }
 
 function getTutorialButtons() {
   const box = getTutorialPanel();
-  const gap = 12;
-  if (!tutorialActive) {
-    const h = 40, w = 220;
-    const y = box.y + box.h - h - 18;
-    return [{ id: 'close', label: 'Close', x: box.x + box.w / 2 - w / 2, y, w, h }];
-  }
-  const h = 34;
+  const h = 34, gap = 12;
   const y = box.y + box.h - h - 18;
+  if (!tutorialActive) {
+    return [{ id: 'close', label: 'Close', x: box.x + box.w / 2 - 70, y, w: 140, h }];
+  }
   const w = (box.w - 48 - gap) / 2;
   return [
     { id: 'gotit', label: 'Got it', x: box.x + 24, y, w, h },
     { id: 'skip', label: 'Skip tutorial', x: box.x + 24 + w + gap, y, w, h },
   ];
-}
-
-// the same key/mouse reference as #controls-legend under the game screen (see
-// index.html) - drawn into the tutorial card and the checklist too, so a player
-// who never scrolls past the canvas, or who skips the tutorial outright, still
-// gets shown what the keys do instead of only finding it below the window
-const CONTROLS_LEGEND_ITEMS = [
-  'Arrows – walk',
-  'Click – interact',
-  'Space – nearest',
-  'Esc – back/close',
-  'M – map',
-  'Drag – trade slots',
-];
-
-function drawControlsReference(x, y, w) {
-  noStroke();
-  textAlign(LEFT, TOP);
-  textSize(10);
-  fill(202, 160, 106);
-  text('CONTROLS', x, y);
-
-  const cols = 3;
-  const colW = w / cols;
-  fill(216, 196, 168);
-  textSize(10);
-  for (let i = 0; i < CONTROLS_LEGEND_ITEMS.length; i++) {
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    text(CONTROLS_LEGEND_ITEMS[i], x + col * colW, y + 14 + row * 16);
-  }
 }
 
 // replaces the old static guide image: the live tutorial card while it's running,
@@ -3179,8 +3271,6 @@ function drawTutorialStepCard(box) {
   fill(238, 220, 192);
   text(step.body, box.x + 26, box.y + 92, box.w - 52);
 
-  drawControlsReference(box.x + 26, box.y + box.h - 154, box.w - 52);
-
   // objective line with its own progress
   const have = tutorialStepProgress();
   const barY = box.y + box.h - 96;
@@ -3198,72 +3288,104 @@ function drawTutorialStepCard(box) {
        box.x + box.w - 38, barY + 17);
 }
 
+// the key bindings, shown only inside the Guide overlay (drawTutorialChecklist()) -
+// there's no permanent plank under the screen any more, so this is the one copy.
+const CONTROL_HINTS = {
+  rows: [
+    { key: 'Arrow keys', label: 'walk' },
+    { key: 'Click', label: 'pick up, plant, enter' },
+    { key: 'Space', label: 'use nearest' },
+    { key: 'Esc', label: 'back / close' },
+    { key: 'M', label: 'map' },
+  ],
+  note: 'drag from the satchel into trade slots',
+};
+
+// a small keycap, so the guide's key names read the same way as the <kbd> chips on
+// the signpost's Map button. Returns its width so the caller can place the label after it.
+function drawKeyChip(label, x, cy) {
+  push();
+  rectMode(CORNER);
+  textSize(11);
+  textStyle(BOLD);
+  const w = textWidth(label) + 14;
+  const h = 18;
+  noStroke();
+  fill(58, 36, 21, 170);
+  rect(x + 1.5, cy - h / 2 + 1.5, w, h, 4);
+  fill(202, 160, 106);
+  rect(x, cy - h / 2, w, h, 4);
+  fill(58, 36, 21);
+  textAlign(CENTER, CENTER);
+  text(label, x + w / 2, cy + 0.5);
+  pop();
+  return w;
+}
+
+// the read-only card the Guide button reopens once the tutorial is done or skipped:
+// what you covered on the left, the full control scheme on the right, so nobody has
+// to squint at the plank under the screen to remember which key does what
 function drawTutorialChecklist(box) {
+  const hints = CONTROL_HINTS;
+  const colLeft = box.x + 30;
+  const colRight = box.x + box.w / 2 + 14;
+  const colW = box.w / 2 - 44;
+
   noStroke();
   fill(246, 231, 205);
   textAlign(CENTER, CENTER);
-  textSize(22);
+  textSize(20);
   textStyle(BOLD);
-  text('Guide Book', box.x + box.w / 2, box.y + 48);
+  text('Getting Started', box.x + box.w / 2, box.y + 40);
   textStyle(NORMAL);
+  textSize(12);
+  fill(232, 210, 175);
+  text('Reopen this any time with the Guide sign.', box.x + box.w / 2, box.y + 64);
 
-  // CONTROLS - the same key/mouse reference as #controls-legend under the game
-  // screen. The step-by-step recap used to sit here too, but by the time this
-  // checklist ever shows the tutorial is finished or skipped, so those steps
-  // are already done - only the keys are still worth surfacing on every reopen.
-  textAlign(CENTER, CENTER);
-  textSize(13);
+  textAlign(LEFT, CENTER);
+  textSize(11);
   fill(202, 160, 106);
-  text('CONTROLS', box.x + box.w / 2, box.y + 92);
+  text('WHAT YOU COVERED', colLeft, box.y + 96);
+  text('CONTROLS', colRight, box.y + 96);
 
-  const items = [
-    ['Arrow keys', 'walk'],
-    ['Click', 'pick up, plant, enter'],
-    ['Space', 'use nearest'],
-    ['Esc', 'back / close'],
-    ['M', 'map'],
-  ];
-
-  const badgeW = 96, badgeH = 26, rowH = 32, descW = 170;
-  const rowW = badgeW + 14 + descW;
-  const rowX = box.x + box.w / 2 - rowW / 2;
-  let y = box.y + 116;
-
-  for (const [key, desc] of items) {
+  // left column: the tutorial goals, all ticked off
+  let y = box.y + 118;
+  for (const step of TUTORIAL_STEPS) {
     noStroke();
-    fill(196, 150, 96);
-    rect(rowX, y - badgeH / 2, badgeW, badgeH, 6);
-    noFill();
-    stroke(150, 110, 66);
-    strokeWeight(1.5);
-    rect(rowX, y - badgeH / 2, badgeW, badgeH, 6);
-    noStroke();
-    fill(64, 40, 22);
-    textAlign(CENTER, CENTER);
-    textSize(12);
-    textStyle(BOLD);
-    text(key, rowX + badgeW / 2, y + 1);
-    textStyle(NORMAL);
-
-    fill(232, 210, 175);
     textAlign(LEFT, CENTER);
-    textSize(12);
-    text(desc, rowX + badgeW + 14, y + 1);
-
-    y += rowH;
+    fill(140, 195, 110);
+    textSize(14);
+    text('\u2713', colLeft, y);
+    fill(238, 220, 192);
+    textSize(13);
+    text(step.goal, colLeft + 20, y);
+    y += 24;
   }
 
-  // the drag hint has no single key to badge, so it stays a plain muted line
-  fill(202, 160, 106);
-  textAlign(CENTER, CENTER);
-  textSize(13);
-  text('- Drag from the satchel into trade slots', box.x + box.w / 2, y + 10);
-  textStyle(NORMAL);
-  y += rowH;
+  // right column: the same legend that sits under the game screen
+  y = box.y + 118;
+  for (const hint of hints.rows) {
+    const chipW = drawKeyChip(hint.key, colRight, y);
+    noStroke();
+    fill(238, 220, 192);
+    textAlign(LEFT, CENTER);
+    textSize(12);
+    text(hint.label, colRight + chipW + 8, y);
+    y += 24;
+  }
+  if (hints.note) {
+    noStroke();
+    fill(202, 160, 106);
+    textAlign(LEFT, TOP);
+    textSize(11);
+    text(hints.note, colRight, y + 2, colW);
+  }
 
   fill(202, 160, 106);
-  textSize(13);
-  text('- The goal board in Home lists what to aim for next.', box.x + box.w / 2, y );
+  textAlign(CENTER, CENTER);
+  textSize(11);
+  text('The goal board in Home lists what to aim for next.',
+       box.x + box.w / 2, box.y + box.h - 78);
 }
 
 // slim reminder of the current objective while the card is dismissed
@@ -3331,7 +3453,24 @@ function handleTutorialClick(mx, my) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
 // FARM MAP
+//
+// A node diagram of the whole farm, built from worldLabels, edgeTransitions and
+// hubZones at draw time. Nothing about the layout is hand-placed: add a hub zone or
+// a new edge transition and it shows up here on its own.
+//
+// The shape falls out of the two kinds of connection the game already has:
+//   - edgeTransitions link the overworld areas left-to-right, so those become a
+//     horizontal spine, ordered by walking the 'left' links to the far end and then
+//     following 'right' back across
+//   - hubZones are the fenced sub-worlds you step into, so each hangs beneath the
+//     area it's entered from
+//
+// It's a reference, not a fast-travel menu: clicking a node doesn't take you there,
+// because walking between areas is the whole navigation model.
+// ---------------------------------------------------------------------------
+
 let mapOpen = false;
 
 // the overworld areas, in left-to-right order, derived from edgeTransitions
@@ -3878,7 +4017,25 @@ function drawQuestNotice() {
   pop();
 }
 
+// ---------------------------------------------------------------------------
 // INTERACTION TARGETING
+//
+// Mouse click is the primary way to act on something (movement stays on the arrow
+// keys, targeting and using things is mouse-driven). Space is a convenience
+// shortcut that acts on whatever happens to be nearest.
+//
+//   findTargetAtPoint(x, y)    -> the specific thing under the cursor   (mouse)
+//   findNearestInteractable()  -> the closest thing to the player       (space)
+//   performInteraction(target) -> executes it, whichever finder found it
+//
+// Both finders return the same target shape:
+//   { type: 'egg' | 'milk' | 'bacon' | 'crop' | 'plant' | 'zone', item, inRange }
+// performInteraction() is the single dispatcher for acting on a target - any new
+// interaction (energy cost, watering, quests, animal feeding) belongs there, so it
+// works with both input methods without being wired up twice.
+// ---------------------------------------------------------------------------
+
+// extra pixels of slack around a sprite so small things stay easy to click
 const CLICK_PADDING = 6;
 
 // which collectible list, if any, belongs to a world
@@ -4219,10 +4376,8 @@ function applyInteraction(target) {
 
     case 'zone': {
       const zone = target.item;
-      const bounds = worldBounds[zone.destination];
-      const centerX = bounds ? (bounds.minX + bounds.maxX) / 2 : undefined;
-      const centerY = bounds ? (bounds.minY + bounds.maxY) / 2 : undefined;
-      changeWorld(zone.destination, centerX, centerY);
+      const centre = worldCenter(zone.destination);
+      changeWorld(zone.destination, centre.x, centre.y);
       console.log(`Entered ${zone.label}`);
       return true;
     }
@@ -4231,17 +4386,41 @@ function applyInteraction(target) {
   return false;
 }
 
-// whatever the cursor is over gets outlined - see drawTargetHighlight(). The
-// floating text label that used to hang over the player's head ("Click to enter
-// Garden", "Too far - walk closer", "X (or SPACE)") has been removed; the hand
-// cursor and the glow are the only affordance now.
+// hint bubble above the player. It follows the mouse: if the cursor is over a
+// target, that target is outlined and described, otherwise it falls back to
+// whatever the space bar would act on.
+// The floating label over the player is for things the player hasn't learned yet, or
+// for something the click won't do. Once the tutorial is behind them, "Click to enter
+// Garden" is noise on every approach - the hand cursor and the glow already say it.
+// These still speak up: out of reach, wrong season, and what feeding costs.
+function promptIsWorthShowing(target) {
+  if (!target) return false;
+  if (!target.inRange) return true;
+  if (target.type === 'feed') return true;
+  if (target.type === 'plant' && selectedSeed && !canPlantInSeason(selectedSeed)) return true;
+  return tutorialActive || !hasSeenTutorial;
+}
+
 function drawInteractPrompt() {
   if (!player) return;
 
   const hovered = findTargetAtPoint(mouseX, mouseY);
   worldTargetHovered = !!(hovered && hovered.inRange); // updateHudCursor() reads this
 
-  if (hovered) drawTargetHighlight(hovered);
+  if (hovered) {
+    drawTargetHighlight(hovered);
+    if (promptIsWorthShowing(hovered)) {
+      drawPromptBubble(hovered.inRange
+        ? promptLabelFor(hovered)
+        : `Too far - walk closer to that ${describeTarget(hovered)}`);
+    }
+    return;
+  }
+
+  const nearest = findNearestInteractable();
+  if (nearest && promptIsWorthShowing(nearest)) {
+    drawPromptBubble(`${promptLabelFor(nearest)} (or SPACE)`);
+  }
 }
 
 // outline whatever the cursor is over, so it is obvious what a click will act on
@@ -4290,6 +4469,31 @@ function setHoverCursor(clickable) {
   if (clickable === hoverCursorOn) return;
   hoverCursorOn = clickable;
   cursor(clickable ? HAND : ARROW);
+}
+
+function drawPromptBubble(label) {
+  push();
+  noStroke();
+  textSize(13);
+  const w = Math.max(130, textWidth(label) + 24);
+
+  // sits just above the hat, and stays inside the screen near the top edge
+  const by = Math.max(24, player.y - player.size - 16);
+  const bx = constrain(player.x, w / 2 + 4, width - w / 2 - 4);
+
+  fill(35, 22, 12, 210);
+  rectMode(CENTER);
+  rect(bx, by, w, 24, 4);
+  noFill();
+  stroke(202, 160, 106, 180);
+  strokeWeight(1);
+  rect(bx, by, w - 4, 20, 3);
+
+  noStroke();
+  fill(246, 231, 205);
+  textAlign(CENTER, CENTER);
+  text(label, bx, by + 1);
+  pop();
 }
 
 // garden grid layout (mirrors the quad/cell math used elsewhere for the garden) -
@@ -4380,10 +4584,8 @@ function goBack() {
   // player's in-hub x/y - that raw position can land inside that hub's own fence
   // quad in the parent world, leaving the player stuck unable to move.
   const target = previousWorld;
-  const bounds = worldBounds[target];
-  const centerX = bounds ? (bounds.minX + bounds.maxX) / 2 : undefined;
-  const centerY = bounds ? (bounds.minY + bounds.maxY) / 2 : undefined;
-  changeWorld(target, centerX, centerY);
+  const centre = worldCenter(target);
+  changeWorld(target, centre.x, centre.y);
   previousWorld = null; // clear history after going back
   return true;
 }
@@ -4403,17 +4605,12 @@ function startGame() {
 function keyPressed() {
   ensureAudioStarted(); // a key press unlocks audio too, for keyboard-first players
 
-  if (newFarmConfirm) {
-    if (keyCode === ESCAPE) newFarmConfirm = false;
-    return;
-  }
-  if (settingsOpen) {
-    if (keyCode === ESCAPE) settingsOpen = false;
-    return;
-  }
-
   // Enter or Space on the title screen starts the game
   if (currentWorld === 'start') {
+    if (newFarmConfirm) {
+      if (keyCode === ESCAPE) newFarmConfirm = false;
+      return;
+    }
     if (keyCode === ENTER || key === ' ') startGame();
     return;
   }
@@ -4450,24 +4647,10 @@ function mousePressed() {
   // anywhere on the canvas is what actually turns the sound on
   ensureAudioStarted();
 
-  // the restart confirmation and the settings panel it hangs off of sit on top
-  // of everything, in any world (including the start screen)
-  if (newFarmConfirm) {
-    for (const button of getNewFarmConfirmButtons()) {
-      if (!pointInRect(mouseX, mouseY, button)) continue;
-      if (button.id === 'confirm') startNewFarm();
-      newFarmConfirm = false;
-      return;
-    }
-    return; // the dialog is modal: clicks elsewhere do nothing
-  }
-  if (settingsOpen) {
-    handleSettingsClick(mouseX, mouseY);
-    return;
-  }
-
   // CLICK TO START GAME
   if (currentWorld === 'start') {
+    // the New Farm button and its confirmation sit on top of the start screen
+    if (handleStartScreenClick(mouseX, mouseY)) return;
     startGame();
     return;
   }
@@ -4496,6 +4679,20 @@ function mousePressed() {
     return;
   }
 
+  // note: home/guide buttons are now real HTML buttons outside the canvas - see
+  // setupHudButtons(). Clicking them no longer goes through mousePressed() at all.
+
+  // note: world-to-world navigation (arrows + hub zones) is now walk-triggered \u2014
+  // see checkWorldTransitions(), edgeTransitions, and hubZones. Mouse clicks no
+  // longer drive movement between worlds, only menus/buttons/trading below.
+
+  // world interactions (primary input): click directly on a harvestable crop, an
+  // egg/milk/bacon, an empty plot while a seed is selected, or a hub-zone entrance.
+  // findTargetAtPoint() enforces INTERACT_RANGE / the zone perimeter, and
+  // performInteraction() is the shared dispatcher the space bar uses too.
+  // This sits ahead of the barn/market menus below on purpose: those worlds have no
+  // player character, so findTargetAtPoint() returns null there and clicks fall
+  // through to the trading UI untouched.
   if (player) {
     const clicked = findTargetAtPoint(mouseX, mouseY);
     if (clicked) {
@@ -4589,7 +4786,26 @@ function isPointInQuad(px, py, x1, y1, x2, y2, x3, y3, x4, y4) {
   return !(hasNeg && hasPos);
 }
 
+// ---------------------------------------------------------------------------
 // SAVE / LOAD
+//
+// One versioned object under one localStorage key. Everything the farm is made of
+// goes in: inventory, coins, the clock, quests, tutorial progress, the garden, the
+// animals and where you were standing.
+//
+// Every field is read through a checked reader that falls back to the value already
+// in memory, so a save missing a field - an old one, a hand-edited one, a corrupt
+// one - loads the parts it does have and defaults the rest. That is the whole
+// migration strategy: version 1 saves have no `version` key and simply lack most
+// fields, which the readers already handle. The version number is recorded so a
+// future change that genuinely can't be expressed as "missing field" has somewhere
+// to branch.
+//
+// Animals and the player can't be restored at load time because setup() hasn't
+// built them yet, so that part of the save is parked in `restoredState` and applied
+// by applyRestoredState() once it has.
+// ---------------------------------------------------------------------------
+
 const SAVE_KEY = 'farmInventory';  // unchanged, so saves made before today still load
 const SAVE_VERSION = 2;
 
@@ -4875,7 +5091,10 @@ function loadInventory() {
   loadGame();
 }
 
-// new farm 
+// ---- new farm --------------------------------------------------------------
+
+// wipes the save and resets everything in memory, back to the start screen. The
+// audio preference is deliberately kept: it's a setting, not farm progress.
 function startNewFarm() {
   try {
     localStorage.removeItem(SAVE_KEY);
@@ -4921,7 +5140,6 @@ function startNewFarm() {
   questBoardOpen = false;
   mapOpen = false;
   newFarmConfirm = false;
-  settingsOpen = false;
 
   restoredState = null;
   if (player) {
@@ -4937,621 +5155,20 @@ function startNewFarm() {
   console.log('Started a new farm');
 }
 
-// start screen
-const SPX = 4;                 // screen pixels per art pixel
-const ART_W = 200, ART_H = 163;
-
-const P_HORIZON  = 113;        // where the sky meets the grass
-const P_BUILD_Y  = 125;        // the buildings' footing
-const START_BASELINE = 568;    // where the cast stands, in screen px (142 * SPX)
-
-// sampled off farm.png, so the scene reads as the same farm you walk around in
-const C_SKY = [[138, 203, 232], [157, 213, 237], [176, 223, 241],
-               [198, 233, 243], [214, 239, 243]];
-const SKY_BAND_Y  = [0, 30, 58, 84, 102];
-const C_HILL_FAR  = [172, 202, 190];
-const C_HILL_NEAR = [152, 188, 154];
-const C_TREE      = [112, 152, 104];
-const C_TREE_DARK = [92, 130, 88];
-const C_TRUNK     = [128, 98, 64];
-const C_GRASS     = [138, 168, 73];
-const C_GRASS_LIT = [152, 180, 86];
-const C_GRASS_DK  = [118, 148, 62];
-const C_BARN_RED  = [176, 56, 61];
-const C_BARN_SHD  = [138, 40, 46];
-const C_BARN_DK   = [108, 30, 36];
-const C_ROOF      = [152, 157, 155];
-const C_ROOF_SHD  = [112, 117, 122];
-const C_ROOF_DK   = [86, 88, 96];
-const C_TRIM      = [240, 238, 230];
-const C_WOOD      = [142, 79, 50];
-const C_WOOD_DK   = [104, 57, 36];
-const C_OUTLINE   = [62, 42, 36];
-const C_PLANK     = [202, 160, 106];
-const C_PLANK_GRN = [186, 144, 92];
-const C_PLANK_DK  = [58, 36, 21];
-
-const PX_STAR = [
-  '...#...',
-  '..###..',
-  '#######',
-  '.#####.',
-  '..###..',
-  '.##.##.',
-  '.#...#.',
-];
-
-// tight content boxes inside the animal PNGs, so each one stands on the ground
-// exactly instead of floating somewhere inside its transparent padding
-const START_SPRITE_BOX = {
-  cow:     { x:  25, y: 132, w: 414, h: 311 },
-  pig:     { x: 109, y: 128, w: 254, h: 218 },
-  chicken: { x:  48, y:  36, w: 235, h: 285 },
-};
-
-// the line-up along the front, x and w kept on the 4px grid. The farmer is drawn
-// by the game's own sprite routine, so he takes a scale instead (2 => 6px cells).
-const START_CAST = [
-  { kind: 'cow',     x: 164, w: 112 },
-  { kind: 'chicken', x: 256, w:  36 },
-  { kind: 'farmer',  x: 332, sc: 2   },
-  { kind: 'chicken', x: 396, w:  36, flip: true },
-  { kind: 'pig',     x: 464, w:  84 },
-  { kind: 'chicken', x: 536, w:  36 },
-  { kind: 'cow',     x: 632, w: 108, flip: true },
-];
-
-const START_CLOUDS = [
-  { x:  22, y: 12, s: 2 },
-  { x:  84, y:  7, s: 1 },
-  { x: 150, y: 17, s: 2 },
-  { x: 188, y:  6, s: 1 },
-];
-
-// two trees with trunks at the frame edges; everything between them is the
-// treeline band, which has no trunks at all so it reads as a wood in the
-// distance rather than a row of lollipops
-const START_TREES = [
-  { x: 7, b: 117, s: 1 },
-  { x: 193, b: 116, s: 1 },
-];
-
-const SIGN_P = { x: 32, y: 22, w: 136, h: 38 };
-const BTN_P  = { x: 71, y: 70, w:  58, h: 17 };
-
-// pixel-grid drawing helpers
-function pxRect(x, y, w, h) {
-  rect(Math.round(x) * SPX, Math.round(y) * SPX, Math.round(w) * SPX, Math.round(h) * SPX);
-}
-
-// a filled ellipse rasterised into horizontal runs, the way pixel art does it
-function pxEllipse(cx, cy, rx, ry) {
-  if (rx <= 0 || ry <= 0) return;
-  for (let dy = -ry; dy <= ry; dy++) {
-    const t = 1 - (dy * dy) / (ry * ry);
-    if (t <= 0) continue;
-    const dx = Math.round(rx * Math.sqrt(t));
-    pxRect(cx - dx, cy + dy, dx * 2 + 1, 1);
+function hasExistingSave() {
+  try {
+    return !!localStorage.getItem(SAVE_KEY);
+  } catch (err) {
+    return false;
   }
 }
 
-// the top half only - used for the silo cap
-function pxDome(cx, cy, rx, ry) {
-  if (rx <= 0 || ry <= 0) return;
-  for (let dy = -ry; dy <= 0; dy++) {
-    const t = 1 - (dy * dy) / (ry * ry);
-    if (t <= 0) continue;
-    const dx = Math.round(rx * Math.sqrt(t));
-    pxRect(cx - dx, cy + dy, dx * 2 + 1, 1);
-  }
-}
+// ---- the start screen's New Farm button ------------------------------------
 
-// a gable roof: every row steps in, which is what gives pixel roofs their
-// staircase edge instead of a smooth diagonal
-function pxGable(cx, apexY, baseY, halfW, lit, shade) {
-  const rows = Math.max(1, baseY - apexY);
-  for (let i = 0; i < rows; i++) {
-    const w = Math.round(((i + 1) / rows) * halfW);
-    fill(lit);   pxRect(cx - w, apexY + i, w, 1);
-    fill(shade); pxRect(cx,     apexY + i, w, 1);
-  }
-}
-
-// Bresenham, one block at a time - for the door braces
-function pxLine(x0, y0, x1, y1) {
-  x0 = Math.round(x0); y0 = Math.round(y0);
-  x1 = Math.round(x1); y1 = Math.round(y1);
-  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
-  const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
-  let err = dx + dy;
-  for (;;) {
-    pxRect(x0, y0, 1, 1);
-    if (x0 === x1 && y0 === y1) break;
-    const e2 = 2 * err;
-    if (e2 >= dy) { err += dy; x0 += sx; }
-    if (e2 <= dx) { err += dx; y0 += sy; }
-  }
-}
-
-function pxBitmap(rows, x, y, col) {
-  fill(col);
-  for (let r = 0; r < rows.length; r++) {
-    for (let c = 0; c < rows[r].length; c++) {
-      if (rows[r][c] !== '.') pxRect(x + c, y + r, 1, 1);
-    }
-  }
-}
-
-// the screen
-let startMotionStill = null;
-function startScreenIsStill() {
-  if (startMotionStill === null) {
-    startMotionStill = !!(window.matchMedia &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  }
-  return startMotionStill;
-}
-
-function getStartButtonRect() {
-  return { x: BTN_P.x * SPX, y: BTN_P.y * SPX, w: BTN_P.w * SPX, h: BTN_P.h * SPX };
-}
-
-function drawStartScreen() {
-  const t = millis() / 1000;
-  const still = startScreenIsStill();
-
-  // nearest-neighbour while the screen is up, so the sprites stay blocky rather
-  // than being smoothed into the pixel scene around them
-  const smoothWas = drawingContext.imageSmoothingEnabled;
-  drawingContext.imageSmoothingEnabled = false;
-
-  push();
-  noStroke();
-  rectMode(CORNER);
-
-  drawStartSky();
-  drawStartClouds(t, still);
-  drawStartHills();
-  drawStartGround();
-  drawStartTreeline();
-  for (const tr of START_TREES) drawStartTree(tr.x, tr.b, tr.s);
-  drawStartCoop(166, 124);
-  drawStartBarn(45, P_BUILD_Y);
-  drawStartSilo(18, P_BUILD_Y);
-  drawStartCast(t, still);
-  drawStartTitle(t, still);
-  drawStartButton();
-  pop();
-
-  drawingContext.imageSmoothingEnabled = smoothWas;
-}
-
-// flat bands with a one-row checker between them - the classic way to grade a
-// pixel sky without reaching for a gradient
-function drawStartSky() {
-  for (let i = 0; i < C_SKY.length; i++) {
-    const next = i + 1 < C_SKY.length ? SKY_BAND_Y[i + 1] : P_HORIZON + 1;
-    fill(C_SKY[i]);
-    pxRect(0, SKY_BAND_Y[i], ART_W, next - SKY_BAND_Y[i]);
-  }
-  for (let i = 1; i < C_SKY.length; i++) {
-    fill(C_SKY[i - 1]);
-    for (let x = i % 2; x < ART_W; x += 2) pxRect(x, SKY_BAND_Y[i], 1, 1);
-  }
-}
-
-function drawStartClouds(t, still) {
-  for (let i = 0; i < START_CLOUDS.length; i++) {
-    const c = START_CLOUDS[i];
-    const span = ART_W + 60;
-    const drift = still ? 0 : Math.floor(t * (1.2 + i * 0.45));
-    const x = ((c.x + drift) % span) - 30;
-    fill(255, 255, 255);
-    pxEllipse(x, c.y, 9 * c.s, 4 * c.s);
-    pxEllipse(x - 7 * c.s, c.y + 2 * c.s, 6 * c.s, 3 * c.s);
-    pxEllipse(x + 8 * c.s, c.y + 2 * c.s, 6 * c.s, 3 * c.s);
-  }
-}
-
-// only the tops show - drawStartGround() paints over everything below the horizon
-function drawStartHills() {
-  drawPxHillBand(99, 7, 0.055, 0.0, C_HILL_FAR);
-  drawPxHillBand(105, 5, 0.085, 2.2, C_HILL_NEAR);
-}
-
-// merged into runs so a rolling silhouette costs ~40 rects, not 200
-function drawPxHillBand(baseY, amp, freq, phase, col) {
-  fill(col);
-  const at = (x) => Math.round(amp *
-    (0.62 * Math.sin(x * freq + phase) + 0.38 * Math.sin(x * freq * 0.53 + phase * 1.7 + 1.1)));
-  let start = 0, cur = at(0);
-  for (let x = 1; x <= ART_W; x++) {
-    const h = x < ART_W ? at(x) : null;
-    if (h !== cur) {
-      const top = baseY - cur;
-      pxRect(start, top, x - start, P_HORIZON - top + 1);
-      start = x;
-      cur = h;
-    }
-  }
-}
-
-function drawStartGround() {
-  fill(C_GRASS);
-  pxRect(0, P_HORIZON, ART_W, ART_H - P_HORIZON);
-  fill(C_GRASS_LIT);
-  pxRect(0, P_HORIZON, ART_W, 3);
-  for (let x = 0; x < ART_W; x += 2) pxRect(x, P_HORIZON + 3, 1, 1);
-
-  fill(C_GRASS_DK);
-  pxEllipse(38, 150, 54, 5);
-  pxEllipse(155, 157, 58, 5);
-  pxEllipse(100, 136, 46, 3);
-
-  // a deterministic scatter, so the field looks the same every load
-  for (let i = 0; i < 58; i++) {
-    const x = ((i * 37) % (ART_W + 6)) - 3;
-    const y = P_HORIZON + 5 + ((i * 23) % 44);
-    fill(i % 3 === 0 ? C_GRASS_DK : C_GRASS_LIT);
-    pxRect(x, y - 1, 1, 2);
-    pxRect(x - 1, y, 1, 1);
-    pxRect(x + 1, y, 1, 1);
-  }
-}
-
-function drawStartTree(x, base, s) {
-  const th = 5 * s, cr = 5 * s;
-  fill(C_TRUNK);
-  pxRect(x - 1, base - th, 2, th);
-  fill(C_TREE);
-  pxEllipse(x, base - th - cr + 1, cr, cr - 1);
-  pxEllipse(x - cr + 2, base - th - 1, cr - 2, cr - 3);
-  pxEllipse(x + cr - 2, base - th - 1, cr - 2, cr - 3);
-  fill(C_TREE_DARK);
-  pxEllipse(x + Math.round(cr * 0.55), base - th - cr + 2,
-            Math.round(cr * 0.45), Math.round(cr * 0.4));
-}
-
-// overlapping canopies sitting on the horizon, deterministic so the wood looks
-// the same every load
-function drawStartTreeline() {
-  for (let i = 0; i < 27; i++) {
-    const x = -6 + i * 8 + ((i * 13) % 5);
-    const r = 4 + ((i * 7) % 3);
-    fill(C_TREE);
-    pxEllipse(x, P_HORIZON - r + 1, r + 1, r);
-  }
-  for (let i = 1; i < 27; i += 2) {
-    const x = -6 + i * 8 + ((i * 13) % 5);
-    const r = 4 + ((i * 7) % 3);
-    fill(C_TREE_DARK);
-    pxEllipse(x + 2, P_HORIZON - r + 2, Math.max(1, r - 2), Math.max(1, r - 2));
-  }
-}
-
-function drawStartBarn(cx, groundY) {
-  const w = 48, bodyH = 30, roofH = 16, over = 3;
-  const x0 = cx - w / 2, top = groundY - bodyH, apex = top - roofH;
-
-  fill(C_OUTLINE);
-  pxRect(x0 - 1, top - 1, w + 2, bodyH + 2);
-  fill(C_BARN_RED);
-  pxRect(x0, top, w - 12, bodyH);
-  fill(C_BARN_SHD);
-  pxRect(x0 + w - 12, top, 12, bodyH);
-  fill(C_BARN_DK);
-  for (let p = x0 + 4; p < x0 + w; p += 4) pxRect(p, top, 1, bodyH);
-
-  pxGable(cx, apex, top, w / 2 + over, C_ROOF, C_ROOF_SHD);
-  fill(C_ROOF_DK);
-  pxRect(x0 - over, top - 2, w + over * 2, 2);
-
-  // the star sits on the wall above the doors, as it does on farm.png
-  pxBitmap(PX_STAR, cx - 3, top + 4, C_TRIM);
-
-  // cream doors with dark braces - white braces on red read as the letters XX
-  const dw = 22, dh = 16, dx = cx - dw / 2, dy = groundY - dh;
-  fill(C_OUTLINE);
-  pxRect(dx - 1, dy - 1, dw + 2, dh + 1);
-  fill(C_TRIM);
-  pxRect(dx, dy, dw, dh);
-  fill(C_WOOD_DK);
-  pxLine(dx + 2, dy + 2, dx + 9, dy + dh - 3);
-  pxLine(dx + 9, dy + 2, dx + 2, dy + dh - 3);
-  pxLine(dx + 13, dy + 2, dx + 20, dy + dh - 3);
-  pxLine(dx + 20, dy + 2, dx + 13, dy + dh - 3);
-  pxRect(dx + 10, dy, 2, dh);
-}
-
-function drawStartSilo(cx, groundY) {
-  const w = 14, h = 32, top = groundY - h;
-  const x0 = cx - w / 2;
-  fill(C_OUTLINE);
-  pxRect(x0 - 1, top, w + 2, h);
-  fill(C_ROOF);
-  pxRect(x0, top, w - 5, h);
-  fill(C_ROOF_SHD);
-  pxRect(x0 + w - 5, top, 5, h);
-  fill(C_ROOF_DK);
-  for (let y = top + 6; y < groundY - 1; y += 6) pxRect(x0, y, w, 1);
-  // the cap gets its own outline, rather than a box drawn behind it
-  fill(C_OUTLINE);
-  pxDome(cx, top, w / 2 + 1, 7);
-  fill(C_ROOF);
-  pxDome(cx, top - 1, w / 2 - 1, 5);
-  fill(C_ROOF_SHD);
-  pxDome(cx + 2, top - 1, Math.round(w / 4), 4);
-}
-
-function drawStartCoop(cx, groundY) {
-  const w = 32, bodyH = 16, roofH = 9, over = 2;
-  const x0 = cx - w / 2, top = groundY - bodyH, apex = top - roofH;
-
-  fill(C_OUTLINE);
-  pxRect(x0 - 1, top - 1, w + 2, bodyH + 2);
-  fill(C_BARN_RED);
-  pxRect(x0, top, w - 8, bodyH);
-  fill(C_BARN_SHD);
-  pxRect(x0 + w - 8, top, 8, bodyH);
-  fill(C_BARN_DK);
-  for (let p = x0 + 3; p < x0 + w; p += 4) pxRect(p, top, 1, bodyH);
-
-  pxGable(cx, apex, top, w / 2 + over, C_ROOF, C_ROOF_SHD);
-  fill(C_ROOF_DK);
-  pxRect(x0 - over, top - 2, w + over * 2, 2);
-
-  fill(C_WOOD_DK);
-  pxRect(cx - 3, groundY - 8, 7, 8);
-  fill(C_WOOD);
-  pxRect(cx - 3, groundY, 9, 2);
-  pxRect(cx - 1, groundY + 2, 9, 1);
-
-  fill(C_TRIM);
-  pxEllipse(cx - 9, top + 5, 3, 3);
-  fill(150, 196, 214);
-  pxEllipse(cx - 9, top + 5, 2, 2);
-}
-
-// the farmer and the stock, each breathing on its own slow cycle. The bob steps
-// in whole blocks so nobody slides by half a pixel against the grid.
-function drawStartCast(t, still) {
-  for (let k = 0; k < START_CAST.length; k++) {
-    const c = START_CAST[k];
-    const bob = still ? 0 : Math.round(Math.sin(t * (0.9 + (k % 3) * 0.16) + k * 1.3)) * SPX;
-
-    // a shadow keeps everyone standing on the grass rather than above it
-    const shW = Math.round(((c.kind === 'farmer' ? 44 : c.w) * 0.8) / SPX / 2);
-    fill(C_GRASS_DK);
-    pxEllipse(c.x / SPX, START_BASELINE / SPX, shW, Math.max(1, Math.round(shW * 0.22)));
-
-    if (c.kind === 'farmer') {
-      push();
-      translate(c.x, START_BASELINE + bob);
-      scale(c.sc);
-      translate(0, -18); // rows 0-15 span -30..+18, so this drops the boots on the line
-      drawFarmerSprite('down', 0, 0);
-      pop();
-      continue;
-    }
-
-    const img = c.kind === 'cow' ? cowImg : (c.kind === 'pig' ? pigImg : chicken1);
-    const f = START_SPRITE_BOX[c.kind];
-    if (!img || !img.width || !f) continue;
-    const h = Math.round(c.w * (f.h / f.w) / SPX) * SPX;
-    push();
-    imageMode(CORNER);
-    translate(c.x, START_BASELINE + bob);
-    if (c.flip) scale(-1, 1);
-    image(img, -c.w / 2, -h, c.w, h, f.x, f.y, f.w, f.h);
-    pop();
-  }
-}
-
-// The wooden sign used to hang above the window as page chrome (#title-sign in
-// index.html). It hangs inside the screen now, on ropes that run up out of frame.
-// It bobs rather than swings: a rotated plank would be the one thing on screen
-// with anti-aliased edges.
-function drawStartTitle(t, still) {
-  const bob = still ? 0 : Math.round(Math.sin(t * 0.6));
-  const x = SIGN_P.x, y = SIGN_P.y + bob, w = SIGN_P.w, h = SIGN_P.h;
-  const ropeL = x + 5, ropeR = x + w - 6;
-
-  fill(C_PLANK_DK);
-  pxRect(ropeL, 0, 1, y + 2);
-  pxRect(ropeR, 0, 1, y + 2);
-
-  pxRect(x + 1, y + 1, w, h);           // hard offset shadow
-  pxRect(x, y, w, h);                   // border
-  fill(C_PLANK);
-  pxRect(x + 1, y + 1, w - 2, h - 2);
-
-  fill(C_PLANK_GRN);
-  for (let gy = y + 7; gy < y + h - 3; gy += 7) pxRect(x + 2, gy, w - 4, 1);
-
-  drawStartTitleLettering(width / 2, (y + h / 2) * SPX);
-
-  for (const nx of [ropeL, ropeR]) {
-    fill(C_PLANK_DK);
-    pxRect(nx - 1, y + 2, 3, 3);
-    fill(255, 255, 255, 70);
-    pxRect(nx - 1, y + 2, 1, 1);
-  }
-}
-
-function drawStartTitleLettering(cx, cy) {
-  if (titleWordmark && titleWordmark.width) {
-    const w = 456;
-    const h = Math.round(titleWordmark.height * (w / titleWordmark.width) / SPX) * SPX;
-    push();
-    imageMode(CENTER);
-    image(titleWordmark, cx, cy, w, h);
-    pop();
-    return;
-  }
-
-  // the sprite carries the whole title, so it gets a stand-in if it fails to load
-  push();
-  textAlign(CENTER, CENTER);
-  textSize(46);
-  textStyle(BOLD);
-  fill(149, 3, 12);
-  text('Sunlit Farms', cx, cy);
-  textStyle(NORMAL);
-  pop();
-}
-
-// a chunky pixel button: hard edges, a lit top row and a shaded bottom one
-function drawStartButton() {
-  const r = getStartButtonRect();
-  const hovered = pointInRect(mouseX, mouseY, r);
-  const pressed = hovered && mouseIsPressed;
-  const x = BTN_P.x, w = BTN_P.w, h = BTN_P.h;
-  const y = BTN_P.y + (pressed ? 1 : (hovered ? -1 : 0));
-
-  if (hovered && !pressed) {
-    fill(255, 210, 63, 70);
-    pxRect(x - 2, y - 2, w + 4, h + 4);
-  }
-
-  fill(C_PLANK_DK);
-  pxRect(x + 1, y + 2, w, h);        // drop shadow
-  pxRect(x, y, w, h);                // outline
-  fill(hovered ? color(132, 182, 88) : color(111, 158, 74));
-  pxRect(x + 1, y + 1, w - 2, h - 2);
-  fill(hovered ? color(164, 206, 116) : color(140, 186, 98));
-  pxRect(x + 2, y + 1, w - 4, 2);    // lit top
-  fill(hovered ? color(96, 140, 62) : color(84, 124, 56));
-  pxRect(x + 2, y + h - 3, w - 4, 2); // shaded bottom
-
-  push();
-  fill(246, 231, 205);
-  textAlign(CENTER, CENTER);
-  textSize(32);
-  textStyle(BOLD);
-  text('START', (x + w / 2) * SPX, (y + h / 2) * SPX + 2);
-  textStyle(NORMAL);
-  pop();
-}
-
-// settings panel & restart
-
-let settingsOpen = false;
 let newFarmConfirm = false;
 
-function getSettingsPanel() {
-  const w = 360, h = 232;
-  return { x: (width - w) / 2, y: (height - h) / 2, w, h };
-}
-
-function getSettingsCloseButton() {
-  const box = getSettingsPanel();
-  return { x: box.x + box.w - 40, y: box.y + 12, w: 28, h: 28 };
-}
-
-function getSettingsSoundButton() {
-  const box = getSettingsPanel();
-  return { x: box.x + 24, y: box.y + 76, w: box.w - 48, h: 44 };
-}
-
-function getSettingsRestartButton() {
-  const box = getSettingsPanel();
-  return { x: box.x + 24, y: box.y + 136, w: box.w - 48, h: 44 };
-}
-
-function drawSettingsPanel() {
-  const box = getSettingsPanel();
-  push();
-  rectMode(CORNER);
-  noStroke();
-  fill(0, 190);
-  rect(0, 0, width, height);
-
-  fill(58, 36, 21);
-  rect(box.x - 4, box.y - 4, box.w + 8, box.h + 8, 12);
-  fill(146, 104, 62);
-  rect(box.x, box.y, box.w, box.h, 10);
-  fill(120, 84, 48);
-  rect(box.x + 12, box.y + 12, box.w - 24, box.h - 24, 8);
-
-  fill(246, 231, 205);
-  textAlign(CENTER, CENTER);
-  textSize(18);
-  textStyle(BOLD);
-  text('Settings', box.x + box.w / 2, box.y + 40);
-  textStyle(NORMAL);
-
-  // close (x)
-  const close = getSettingsCloseButton();
-  const closeHovered = pointInRect(mouseX, mouseY, close);
-  noStroke();
-  fill(closeHovered ? color(196, 96, 82) : color(168, 76, 64));
-  rect(close.x, close.y, close.w, close.h, 6);
-  noFill();
-  stroke(58, 36, 21);
-  strokeWeight(2);
-  rect(close.x, close.y, close.w, close.h, 6);
-  noStroke();
-  fill(246, 231, 205);
-  textSize(14);
-  text('x', close.x + close.w / 2, close.y + close.h / 2 + 1);
-
-  // sound toggle
-  const sound = getSettingsSoundButton();
-  const soundHovered = pointInRect(mouseX, mouseY, sound);
-  noStroke();
-  fill(58, 36, 21, 200);
-  rect(sound.x + 3, sound.y + 3, sound.w, sound.h, 8);
-  fill(soundHovered ? color(176, 130, 84) : color(146, 104, 62));
-  rect(sound.x, sound.y, sound.w, sound.h, 8);
-  noFill();
-  stroke(58, 36, 21);
-  strokeWeight(3);
-  rect(sound.x, sound.y, sound.w, sound.h, 8);
-  noStroke();
-  fill(246, 231, 205);
-  textSize(14);
-  text(audioMuted ? 'Sound: Off' : 'Sound: On', sound.x + sound.w / 2, sound.y + sound.h / 2 + 1);
-
-  // restart game
-  const restart = getSettingsRestartButton();
-  const restartHovered = pointInRect(mouseX, mouseY, restart);
-  noStroke();
-  fill(58, 36, 21, 200);
-  rect(restart.x + 3, restart.y + 3, restart.w, restart.h, 8);
-  fill(restartHovered ? color(196, 96, 82) : color(168, 76, 64));
-  rect(restart.x, restart.y, restart.w, restart.h, 8);
-  noFill();
-  stroke(58, 36, 21);
-  strokeWeight(3);
-  rect(restart.x, restart.y, restart.w, restart.h, 8);
-  noStroke();
-  fill(246, 231, 205);
-  textSize(14);
-  text('Restart Game', restart.x + restart.w / 2, restart.y + restart.h / 2 + 1);
-  pop();
-
-  if (newFarmConfirm) drawNewFarmConfirm();
-}
-
-// returns true when the click was consumed by the settings panel
-function handleSettingsClick(mx, my) {
-  if (pointInRect(mx, my, getSettingsCloseButton())) {
-    settingsOpen = false;
-    return true;
-  }
-  if (pointInRect(mx, my, getSettingsSoundButton())) {
-    setMuted(!audioMuted);
-    return true;
-  }
-  if (pointInRect(mx, my, getSettingsRestartButton())) {
-    newFarmConfirm = true;
-    return true;
-  }
-  if (!pointInRect(mx, my, getSettingsPanel())) {
-    settingsOpen = false; // clicking the dimmed backdrop closes the panel
-    return true;
-  }
-  return true; // modal: swallow clicks inside the panel that missed a control
+function getNewFarmButton() {
+  return { x: width - 172, y: height - 56, w: 152, h: 36 };
 }
 
 function getNewFarmConfirmButtons() {
@@ -5567,6 +5184,74 @@ function getNewFarmConfirmButtons() {
 function getNewFarmPanel() {
   const w = 420, h = 180;
   return { x: (width - w) / 2, y: (height - h) / 2, w, h };
+}
+
+function drawStartScreenControls() {
+  drawStartScreenHint();
+  if (!hasExistingSave()) return;
+
+  const button = getNewFarmButton();
+  const hovered = !newFarmConfirm && pointInRect(mouseX, mouseY, button);
+
+  push();
+  rectMode(CORNER);
+  noStroke();
+  fill(58, 36, 21, 200);
+  rect(button.x + 3, button.y + 3, button.w, button.h, 8);
+  fill(hovered ? color(176, 130, 84) : color(146, 104, 62));
+  rect(button.x, button.y, button.w, button.h, 8);
+  noFill();
+  stroke(58, 36, 21);
+  strokeWeight(3);
+  rect(button.x, button.y, button.w, button.h, 8);
+  noStroke();
+  fill(246, 231, 205);
+  textAlign(CENTER, CENTER);
+  textSize(14);
+  text('New Farm', button.x + button.w / 2, button.y + button.h / 2 + 1);
+  pop();
+
+  if (newFarmConfirm) drawNewFarmConfirm();
+}
+
+// a plank under the START button that says how to begin and, for a returning
+// player, that their farm is still here - the New Farm button sits to its right
+function drawStartScreenHint() {
+  if (newFarmConfirm) return;
+  const resuming = hasExistingSave();
+  const line1 = resuming ? 'Click START or press Enter to continue your farm'
+                         : 'Click START or press Enter to begin';
+  const line2 = 'Arrow keys walk  ·  the mouse does everything else';
+
+  push();
+  textSize(14);
+  textStyle(BOLD);
+  const w = Math.max(textWidth(line1), textWidth(line2)) + 40;
+  textStyle(NORMAL);
+  const h = 50;
+  const x = resuming ? 20 : (width - w) / 2;
+  const y = height - h - 16;
+
+  rectMode(CORNER);
+  noStroke();
+  fill(58, 36, 21, 220);
+  rect(x + 3, y + 3, w, h, 6);
+  fill(202, 160, 106);
+  stroke(58, 36, 21);
+  strokeWeight(3);
+  rect(x, y, w, h, 6);
+
+  noStroke();
+  fill(58, 36, 21);
+  textAlign(CENTER, CENTER);
+  textSize(14);
+  textStyle(BOLD);
+  text(line1, x + w / 2, y + 16);
+  textStyle(NORMAL);
+  textSize(13);
+  fill(92, 62, 34);
+  text(line2, x + w / 2, y + 35);
+  pop();
 }
 
 function drawNewFarmConfirm() {
@@ -5617,7 +5302,42 @@ function drawNewFarmConfirm() {
   pop();
 }
 
+// returns true when the click was consumed by the start-screen controls
+function handleStartScreenClick(mx, my) {
+  if (newFarmConfirm) {
+    for (const button of getNewFarmConfirmButtons()) {
+      if (!pointInRect(mx, my, button)) continue;
+      if (button.id === 'confirm') startNewFarm();
+      newFarmConfirm = false;
+      return true;
+    }
+    return true; // the dialog is modal: clicks elsewhere do nothing
+  }
+
+  if (hasExistingSave() && pointInRect(mx, my, getNewFarmButton())) {
+    newFarmConfirm = true;
+    return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // INVENTORY PANEL
+//
+// The tray is grouped rather than one flat run of slots. Each group gets a label
+// and its own small grid; every item keeps a fixed slot whether or not you own any,
+// so the layout never reflows as counts change.
+//
+// The per-slot DOM is deliberately unchanged from the flat version:
+//   .inventory-slot[data-item]  >  .inventory-item[data-item][draggable]
+//                                    >  .inventory-count
+// handleDragStart() reads the inline background off .inventory-item, handleSeedClick()
+// and refreshSeedSelectionHighlight() both key off data-item, and
+// updateInventoryDisplay() finds a slot with querySelector('[data-item=...]') - which
+// resolves to the slot because it always precedes its own item in the DOM. Keeping
+// that shape is what makes this a layout pass and not a mechanics change.
+// ---------------------------------------------------------------------------
+
 const INVENTORY_CATEGORIES = [
   { id: 'crops',   label: 'Seeds & Crops',    columns: 4,
     items: ['wheat', 'corn', 'carrot', 'radish', 'apple', 'strawberry',
@@ -5684,7 +5404,10 @@ function createInventoryItem(itemName) {
   return item;
 }
 
-// hover tooltip
+// ---- hover tooltip ---------------------------------------------------------
+// Lives on document.body rather than inside the tray, because #console-body clips
+// its overflow and the tooltip needs to float above the canvas.
+
 function getInventoryTooltip() {
   let tip = document.getElementById('inventory-tooltip');
   if (!tip) {
@@ -5879,15 +5602,13 @@ function initializeInventory() {
 function setupHudButtons() {
   const homeBtn = document.getElementById('home-button');
   if (homeBtn) {
+    // always land in the middle of the farmyard. Without an explicit entry point
+    // changeWorld() keeps the x/y the player had in the hub they came from, and that
+    // spot can sit inside one of home's fence quads (the coop, the garden, the barn
+    // footprint) - the player would arrive stuck, unable to walk in any direction.
     homeBtn.addEventListener('click', () => {
-      // recenter on the home screen rather than reusing the player's raw x/y from
-      // wherever they clicked Home (a hub interior, an extend field, etc) - that
-      // stale position can land outside home's walkable area or inside one of its
-      // hub-zone fences, leaving the player stuck. Same fix as goBack() uses.
-      const bounds = worldBounds['home'];
-      const centerX = bounds ? (bounds.minX + bounds.maxX) / 2 : undefined;
-      const centerY = bounds ? (bounds.minY + bounds.maxY) / 2 : undefined;
-      changeWorld('home', centerX, centerY);
+      const centre = worldCenter('home');
+      changeWorld('home', centre.x, centre.y);
     });
   }
 
@@ -5907,20 +5628,14 @@ function setupHudButtons() {
     mapBtn.addEventListener('click', toggleFarmMap);
   }
 
-  const settingsBtn = document.getElementById('settings-button');
-  if (settingsBtn) {
-    settingsBtn.addEventListener('click', () => {
+  const muteBtn = document.getElementById('mute-button');
+  if (muteBtn) {
+    muteBtn.addEventListener('click', () => {
       ensureAudioStarted(); // a click on this button is itself a valid unlock gesture
-      settingsOpen = !settingsOpen;
-      if (settingsOpen) {
-        mapOpen = false;
-        questBoardOpen = false;
-        showGuide = false;
-      } else {
-        newFarmConfirm = false;
-      }
+      setMuted(!audioMuted);
     });
   }
+  updateMuteButton(); // reflect the preference restored by loadInventory()
 }
 
 // creates the floating icon that follows the cursor while an inventory item is

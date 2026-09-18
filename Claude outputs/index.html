@@ -35,11 +35,13 @@
     <!--
       The page is laid out like the front of a barn:
 
-        [signpost]   [ the game screen, a big barn window ]   [satchel]
+        [signpost]   [ roof gable with the title sign swinging under it ]   [satchel]
+                     [ the game screen, a big barn window                ]
 
-      The signpost on the left is the menu (its boards point at the screen) and the
-      satchel on the right is the inventory. The title now hangs inside the start
-      screen rather than above the window - see drawStartTitle() in sketch.js.
+      The signpost on the left is the menu (its boards point at the screen), the
+      satchel on the right is the inventory. The control scheme lives in the Guide
+      overlay (guide-button below, drawn by drawTutorialChecklist() in sketch.js)
+      rather than as a permanent plank under the screen.
     -->
     <div id="farm-page">
 
@@ -55,20 +57,26 @@
                 <button id="map-button" class="sign-board tilt-c" data-icon="map" aria-label="Open farm map" title="Farm map (M)" aria-pressed="false">
                     <span class="px-icon-holder"></span><span class="sign-text">Map <kbd class="sign-key">M</kbd></span>
                 </button>
-                <button id="settings-button" class="sign-board tilt-d" data-icon="settings" aria-label="Open settings" title="Settings" aria-pressed="false">
-                    <span class="px-icon-holder"></span><span class="sign-text">Settings</span>
+                <button id="mute-button" class="sign-board tilt-d" data-icon="sound" aria-label="Mute sound" title="Sound on" aria-pressed="false">
+                    <span class="px-icon-holder"></span><span class="sign-text" id="mute-label">Sound</span>
                 </button>
             </div>
             <div class="signpost-post" aria-hidden="true"></div>
             <div class="signpost-grass" aria-hidden="true"></div>
         </nav>
 
-        <!-- MIDDLE: the barn - the game screen as its window. The roof gable and the
-             hanging title sign used to sit above it; the sign is now drawn inside the
-             start screen itself, so all that is left here is a heading for screen
-             readers (the canvas title is pixels, not text). -->
+        <!-- MIDDLE: the barn - roof gable, hanging title sign, and the screen as its window -->
         <div id="barn">
-            <h1 class="visually-hidden">Sunlit Farms</h1>
+            <div id="gable" aria-hidden="true">
+                <div class="roof roof-back"></div>
+                <div class="roof roof-front"></div>
+                <div class="eave"></div>
+            </div>
+            <div id="title-sign">
+                <span class="rope rope-left" aria-hidden="true"></span>
+                <span class="rope rope-right" aria-hidden="true"></span>
+                <h1>Sunlit Farms</h1>
+            </div>
             <div id="console-body">
                 <div id="canvas-container">
                 </div>
@@ -79,6 +87,7 @@
         <aside id="inventory-container" aria-label="Inventory">
             <div class="crate-label"><span>Satchel</span></div>
             <div id="inventory-grid"></div>
+            <div class="crate-hint">click a seed to pick it, then click a plot</div>
         </aside>
 
     </div>
